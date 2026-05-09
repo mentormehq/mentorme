@@ -1,0 +1,2048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Mentor Me</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body,#root{height:100%;font-family:'Plus Jakarta Sans',sans-serif}
+body{background:#f4f6f0}
+button,input,select,textarea{font-family:'Plus Jakarta Sans',sans-serif}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:#c8d5c0;border-radius:99px}
+::-webkit-scrollbar-track{background:transparent}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.anim{animation:fadeUp .22s ease}
+.leaflet-container{border-radius:12px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script type="text/babel" data-presets="react">
+const {useState,useEffect,useRef,useCallback,useMemo}=React;
+
+/* ─────────────────────────────────────────────
+   CONFIG
+───────────────────────────────────────────── */
+const SB_URL="https://olijbhriedkqtgbdsyoq.supabase.co";
+const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9saWpiaHJpZWRrcXRnYmRzeW9xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgwODQzMDQsImV4cCI6MjA5MzY2MDMwNH0.quMep1ug5oMkJkBOaSzmnN7Ux3BImqg44c9yJLTi7hE";
+const GEMINI_KEY="AIzaSyBw0BPKD_52BbsiQBCy4ZhGV4SGOwGm-ps";
+const ADMIN_EMAIL="mentormehq@gmail.com";
+const ADMIN_PASS="cv5gh6Yks*";
+const db=supabase.createClient(SB_URL,SB_KEY);
+
+/* ─────────────────────────────────────────────
+   DESIGN TOKENS
+───────────────────────────────────────────── */
+const C={
+  // primary greens
+  p900:"#0d2b1a",p800:"#1a4a2e",p700:"#1f5c37",p600:"#276843",
+  p500:"#2f7a4f",p400:"#3d9962",p300:"#5cb87a",p200:"#a8d9b8",
+  p100:"#d4eedd",p50:"#edf7f1",
+  // neutrals
+  n900:"#111814",n800:"#1e2820",n700:"#2d3b31",n600:"#3f5244",
+  n500:"#556b5a",n400:"#7a9282",n300:"#a3b8ab",n200:"#ccddd3",
+  n100:"#e5ede8",n50:"#f4f6f0",
+  // semantic
+  bg:"#f4f6f0",surface:"#ffffff",border:"#dde8e1",
+  text:"#111814",muted:"#556b5a",light:"#8fa898",
+  danger:"#c0392b",dangerL:"#fdf0ef",dangerB:"#f5c0bb",
+  warn:"#d97706",warnL:"#fef9ee",
+  success:"#1f7a4f",successL:"#edf7f1",
+  // activity
+  online:"#16a34a",today:"#2563eb",inactive:"#d97706",dormant:"#94a3b8",
+  // admin accent
+  adm:"#5b21b6",admL:"#f5f3ff",admB:"#ddd6fe",
+  shadow:"0 1px 3px rgba(0,0,0,.06),0 4px 12px rgba(0,0,0,.04)",
+  shadowM:"0 4px 16px rgba(0,0,0,.08),0 12px 32px rgba(0,0,0,.06)",
+  shadowL:"0 8px 32px rgba(0,0,0,.12),0 24px 64px rgba(0,0,0,.08)",
+};
+
+/* ─────────────────────────────────────────────
+   UTILITIES
+───────────────────────────────────────────── */
+const COLORS=[C.p600,C.p500,"#2563eb","#7c3aed","#db2777","#ea580c","#0891b2","#16a34a"];
+const avColor=s=>{let h=0;for(let i=0;i<(s||"").length;i++)h=(h*31+s.charCodeAt(i))&0xffff;return COLORS[h%COLORS.length]};
+const initials=n=>{const p=(n||"?").trim().split(" ").filter(Boolean);return(p.length>=2?p[0][0]+p[1][0]:p[0]?.[0]||"?").toUpperCase()};
+const fmtDate=d=>{if(!d)return"";return new Date(d).toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"short"})};
+const fmtTime=t=>{if(!t)return"";const[h,m]=t.split(":");return`${+h%12||12}:${m} ${+h>=12?"PM":"AM"}`};
+const timeAgo=d=>{if(!d)return"Never";const s=Math.floor((Date.now()-new Date(d))/1000);if(s<60)return"Just now";if(s<3600)return`${Math.floor(s/60)}m ago`;if(s<86400)return`${Math.floor(s/3600)}h ago`;return`${Math.floor(s/86400)}d ago`};
+const activityStatus=last=>{if(!last)return"dormant";const m=(Date.now()-new Date(last))/60000;if(m<5)return"online";if(m<1440)return"today";if(m<43200)return"inactive";return"dormant"};
+const activityLabel=s=>({online:"Online now",today:"Active today",inactive:"Active this month",dormant:"Dormant"}[s]||"Dormant");
+const activityColor=s=>({online:C.online,today:C.today,inactive:C.inactive,dormant:C.dormant}[s]||C.dormant);
+const pushNotif=async(userId,title,body,type="info")=>{if(!userId)return;await db.from("notifications").insert({user_id:userId,title,body,type})};
+const updateLastSeen=async uid=>{if(uid)await db.from("profiles").update({last_seen:new Date().toISOString()}).eq("id",uid)};
+
+/* ─────────────────────────────────────────────
+   PRIMITIVE COMPONENTS
+───────────────────────────────────────────── */
+const Spinner=({s=20,c=C.p500})=><div style={{width:s,height:s,borderRadius:"50%",border:`2.5px solid ${c}22`,borderTopColor:c,animation:"spin .7s linear infinite",flexShrink:0}}/>;
+
+const Avatar=({name="",size=36,url,style:st={}})=>url
+  ?<img src={url} style={{width:size,height:size,borderRadius:"50%",objectFit:"cover",flexShrink:0,...st}}/>
+  :<div style={{width:size,height:size,borderRadius:"50%",background:avColor(name),color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.36,fontWeight:700,flexShrink:0,...st}}>{initials(name)}</div>;
+
+const Badge=({label,bg,color,dot})=><span style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:11,fontWeight:600,padding:"3px 8px",borderRadius:99,background:bg||C.p50,color:color||C.p600,whiteSpace:"nowrap"}}>
+  {dot&&<span style={{width:6,height:6,borderRadius:"50%",background:color||C.p600,flexShrink:0}}/>}{label}
+</span>;
+
+const ProgressBar=({value=0,color=C.p500,height=6})=><div style={{height,borderRadius:99,background:C.n100,overflow:"hidden"}}>
+  <div style={{height:"100%",width:`${Math.min(100,Math.max(0,value))}%`,background:color,borderRadius:99,transition:"width .5s ease"}}/>
+</div>;
+
+const Field=({label,type="text",placeholder,value,onChange,error,helper,rows,required,min,max})=>{
+  const [focus,setFocus]=useState(false);
+  const border=error?C.danger:focus?C.p500:C.border;
+  const base={width:"100%",padding:"11px 13px",borderRadius:9,border:`1.5px solid ${border}`,fontSize:14,color:C.text,background:"#fff",outline:"none",display:"block",lineHeight:1.5,transition:"border-color .15s"};
+  return <div style={{marginBottom:15}}>
+    {label&&<label style={{display:"block",fontSize:12.5,fontWeight:600,color:C.muted,marginBottom:5,letterSpacing:".01em"}}>{label}{required&&<span style={{color:C.danger}}> *</span>}</label>}
+    {rows?<textarea placeholder={placeholder} value={value} onChange={onChange} rows={rows} onFocus={()=>setFocus(true)} onBlur={()=>setFocus(false)} style={{...base,resize:"vertical"}}/>
+    :<input type={type} placeholder={placeholder} value={value} onChange={onChange} onFocus={()=>setFocus(true)} onBlur={()=>setFocus(false)} min={min} max={max} style={base}/>}
+    {error&&<div style={{fontSize:12,color:C.danger,marginTop:4}}>{error}</div>}
+    {helper&&!error&&<div style={{fontSize:12,color:C.light,marginTop:4}}>{helper}</div>}
+  </div>;
+};
+
+const Select=({label,value,onChange,options=[]})=><div style={{marginBottom:15}}>
+  {label&&<label style={{display:"block",fontSize:12.5,fontWeight:600,color:C.muted,marginBottom:5}}>{label}</label>}
+  <select value={value} onChange={onChange} style={{width:"100%",padding:"11px 13px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:14,color:C.text,background:"#fff",outline:"none",cursor:"pointer"}}>
+    {options.map(o=><option key={o.value??o} value={o.value??o}>{o.label??o}</option>)}
+  </select>
+</div>;
+
+const Btn=({children,onClick,variant="primary",size="md",loading,disabled,style:ext={}})=>{
+  const bg={primary:C.p600,outline:"transparent",ghost:"transparent",danger:"transparent",success:C.success,warning:C.warn};
+  const col={primary:"#fff",outline:C.muted,ghost:C.muted,danger:C.danger,success:"#fff",warning:"#fff"};
+  const border={primary:"none",outline:`1.5px solid ${C.border}`,ghost:"none",danger:`1.5px solid ${C.dangerB}`,success:"none",warning:"none"};
+  const pad={sm:"6px 14px",md:"9px 18px",lg:"12px 24px"};
+  const fs={sm:12,md:13,lg:15};
+  return <button onClick={onClick} disabled={disabled||loading} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:7,padding:pad[size],borderRadius:9,border:border[variant],background:bg[variant],color:col[variant],fontSize:fs[size],fontWeight:700,cursor:disabled||loading?"not-allowed":"pointer",opacity:disabled?.6:1,transition:"all .15s",letterSpacing:".01em",...ext}}>
+    {loading&&<Spinner s={13} c={variant==="primary"||variant==="success"?"#fff":C.p500}/>}{children}
+  </button>;
+};
+
+const Modal=({open,onClose,title,children,wide=false})=>{
+  if(!open)return null;
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20,overflowY:"auto"}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:18,padding:"26px 28px",width:"100%",maxWidth:wide?680:480,boxShadow:C.shadowL,animation:"fadeUp .2s ease",maxHeight:"90vh",overflowY:"auto",position:"relative"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+        <h2 style={{fontSize:17,fontWeight:800,color:C.text,letterSpacing:"-.02em"}}>{title}</h2>
+        <button onClick={onClose} style={{width:28,height:28,borderRadius:"50%",border:"none",background:C.n50,color:C.muted,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+      </div>
+      {children}
+    </div>
+  </div>;
+};
+
+const ConfirmDialog=({open,title,body,confirmText="Confirm",danger=false,onConfirm,onCancel,loading})=>{
+  if(!open)return null;
+  return <div onClick={onCancel} style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:16,padding:"24px 26px",width:"100%",maxWidth:400,boxShadow:C.shadowL}}>
+      <h3 style={{fontSize:16,fontWeight:800,color:C.text,marginBottom:8}}>{title}</h3>
+      <p style={{fontSize:14,color:C.muted,lineHeight:1.6,marginBottom:22}}>{body}</p>
+      <div style={{display:"flex",gap:10}}>
+        <Btn variant="outline" onClick={onCancel} style={{flex:1}} disabled={loading}>Cancel</Btn>
+        <Btn variant={danger?"danger":"primary"} onClick={onConfirm} loading={loading} style={{flex:1}}>{confirmText}</Btn>
+      </div>
+    </div>
+  </div>;
+};
+
+/* Toast */
+const useToast=()=>{
+  const [t,setT]=useState(null);
+  const show=(msg,type="success")=>{setT({msg,type});setTimeout(()=>setT(null),3200)};
+  const Toast=()=>t?<div style={{position:"fixed",bottom:72,left:"50%",transform:"translateX(-50%)",padding:"11px 20px",borderRadius:10,fontSize:13,fontWeight:600,zIndex:999,boxShadow:C.shadowM,pointerEvents:"none",animation:"fadeUp .2s ease",background:t.type==="success"?C.success:t.type==="warn"?C.warn:C.danger,color:"#fff",whiteSpace:"nowrap"}}>{t.msg}</div>:null;
+  return [Toast,show];
+};
+
+/* Empty state */
+const Empty=({icon="📋",title,body,action})=><div style={{textAlign:"center",padding:"52px 20px",display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
+  <span style={{fontSize:36}}>{icon}</span>
+  <div style={{fontSize:15,fontWeight:700,color:C.text}}>{title}</div>
+  {body&&<div style={{fontSize:13,color:C.muted,maxWidth:300,lineHeight:1.6}}>{body}</div>}
+  {action}
+</div>;
+
+/* ─────────────────────────────────────────────
+   FILE UPLOAD
+───────────────────────────────────────────── */
+const uploadFile=async(file,path)=>{
+  const{error}=await db.storage.from("mentor-me-files").upload(path,file,{upsert:true});
+  if(error)throw error;
+  const{data}=db.storage.from("mentor-me-files").getPublicUrl(path);
+  return data.publicUrl;
+};
+
+/* ─────────────────────────────────────────────
+   SIDEBAR NAV
+───────────────────────────────────────────── */
+const NAV_ITEMS=[
+  {id:"dashboard",label:"Dashboard",icon:"⊞"},
+  {id:"sessions",label:"Sessions",icon:"📅"},
+  {id:"goals",label:"Goals",icon:"🎯"},
+  {id:"quizzes",label:"Quizzes",icon:"📝"},
+  {id:"messages",label:"Messages",icon:"💬"},
+  {id:"resources",label:"Resources",icon:"📂"},
+  {id:"profile",label:"Profile",icon:"👤"},
+];
+
+const Sidebar=({active,onNav,profile,onSignOut,unread=0,collapsed,setCollapsed})=>{
+  return <aside style={{width:collapsed?60:226,flexShrink:0,background:C.p900,display:"flex",flexDirection:"column",transition:"width .25s ease",overflow:"hidden",position:"relative"}}>
+    {/* Logo */}
+    <div style={{padding:collapsed?"16px 0":"18px 18px 14px",display:"flex",alignItems:"center",gap:10,cursor:"pointer",justifyContent:collapsed?"center":"flex-start"}} onClick={()=>setCollapsed(!collapsed)}>
+      <div style={{width:32,height:32,borderRadius:8,background:C.p400,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:16}}>🌱</div>
+      {!collapsed&&<span style={{fontSize:16,fontWeight:800,color:"#fff",letterSpacing:"-.02em",whiteSpace:"nowrap"}}>Mentor Me</span>}
+    </div>
+    {/* Nav */}
+    <nav style={{flex:1,padding:"4px 8px",display:"flex",flexDirection:"column",gap:2}}>
+      {NAV_ITEMS.map(n=>{
+        const active_=active===n.id;
+        return <button key={n.id} onClick={()=>onNav(n.id)} style={{display:"flex",alignItems:"center",gap:10,padding:collapsed?"10px 0":"9px 11px",borderRadius:8,border:"none",background:active_?"rgba(255,255,255,.12)":"transparent",color:active_?"#fff":"rgba(255,255,255,.55)",fontSize:13,fontWeight:active_?700:500,cursor:"pointer",width:"100%",justifyContent:collapsed?"center":"flex-start",position:"relative",transition:"all .15s"}}>
+          <span style={{fontSize:16,lineHeight:1,flexShrink:0}}>{n.icon}</span>
+          {!collapsed&&<span style={{whiteSpace:"nowrap"}}>{n.label}</span>}
+          {n.id==="messages"&&unread>0&&<span style={{marginLeft:collapsed?0:"auto",fontSize:10,fontWeight:700,padding:"1px 6px",borderRadius:99,background:C.p400,color:"#fff",position:collapsed?"absolute":"static",top:collapsed?6:undefined,right:collapsed?6:undefined}}>{unread}</span>}
+        </button>;
+      })}
+    </nav>
+    {/* User */}
+    <div style={{padding:collapsed?"10px 4px":"12px 10px",borderTop:"1px solid rgba(255,255,255,.08)"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,justifyContent:collapsed?"center":"flex-start",marginBottom:8,padding:collapsed?0:"2px 4px"}}>
+        <Avatar name={profile?.full_name||"?"} size={28} url={profile?.avatar_url}/>
+        {!collapsed&&<div style={{minWidth:0}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{profile?.full_name||"User"}</div>
+          <div style={{fontSize:10,color:"rgba(255,255,255,.45)",textTransform:"capitalize"}}>{profile?.role}</div>
+        </div>}
+      </div>
+      <button onClick={onSignOut} style={{display:"flex",alignItems:"center",gap:8,padding:collapsed?"8px 0":"7px 8px",borderRadius:7,border:"none",background:"transparent",color:"rgba(255,255,255,.4)",fontSize:12,fontWeight:500,cursor:"pointer",width:"100%",justifyContent:collapsed?"center":"flex-start"}}>
+        <span>↪</span>{!collapsed&&"Sign out"}
+      </button>
+    </div>
+  </aside>;
+};
+
+const TopBar=({title,profile,notifications=[],onMarkRead})=>{
+  const [open,setOpen]=useState(false);
+  const unread=notifications.filter(n=>!n.read).length;
+  const icons={session:"📅",goal:"🎯",quiz:"📝",resource:"📂",message:"💬",announcement:"📢",info:"ℹ️"};
+  return <div style={{height:56,padding:"0 28px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",justifyContent:"space-between",background:"#fff",flexShrink:0}}>
+    <span style={{fontSize:15,fontWeight:700,color:C.text,letterSpacing:"-.01em"}}>{title}</span>
+    <div style={{position:"relative"}}>
+      <button onClick={()=>{setOpen(!open);if(unread>0&&!open)onMarkRead()}} style={{width:36,height:36,borderRadius:"50%",border:`1px solid ${C.border}`,background:C.n50,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",position:"relative"}}>
+        🔔
+        {unread>0&&<div style={{position:"absolute",top:5,right:5,width:8,height:8,borderRadius:"50%",background:C.p500,border:"1.5px solid #fff"}}/>}
+      </button>
+      {open&&<div style={{position:"absolute",right:0,top:44,width:310,background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,boxShadow:C.shadowM,zIndex:100,overflow:"hidden",animation:"fadeIn .15s ease"}}>
+        <div style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,fontSize:13,fontWeight:700,color:C.text}}>Notifications</div>
+        <div style={{maxHeight:340,overflowY:"auto"}}>
+          {notifications.length===0&&<div style={{padding:"24px",textAlign:"center",color:C.muted,fontSize:13}}>Nothing yet</div>}
+          {notifications.slice(0,12).map(n=><div key={n.id} style={{padding:"11px 16px",borderBottom:`1px solid ${C.n50}`,background:n.read?"#fff":C.p50,display:"flex",gap:10}}>
+            <span style={{fontSize:15,flexShrink:0}}>{icons[n.type]||"ℹ️"}</span>
+            <div><div style={{fontSize:12.5,fontWeight:600,color:C.text}}>{n.title}</div><div style={{fontSize:12,color:C.muted,marginTop:2,lineHeight:1.4}}>{n.body}</div><div style={{fontSize:11,color:C.light,marginTop:3}}>{timeAgo(n.created_at)}</div></div>
+          </div>)}
+        </div>
+      </div>}
+    </div>
+  </div>;
+};
+
+/* ─────────────────────────────────────────────
+   DASHBOARD
+───────────────────────────────────────────── */
+const Dashboard=({profile})=>{
+  const [d,setD]=useState({sessions:[],goals:[],msgs:[],quizzes:[]});
+  const [loading,setLoading]=useState(true);
+  const isMentor=profile.role==="mentor";
+
+  useEffect(()=>{load()},[]);
+  const load=async()=>{
+    const col=isMentor?"mentor_id":"mentee_id";
+    const[s,g,m,q]=await Promise.all([
+      db.from("sessions").select("*,mentor:profiles!sessions_mentor_id_fkey(full_name,avatar_url),mentee:profiles!sessions_mentee_id_fkey(full_name,avatar_url)").eq(col,profile.id).eq("status","upcoming").order("session_date",{ascending:true}).limit(3),
+      db.from("goals").select("*").eq("owner_id",profile.id).order("created_at",{ascending:false}).limit(4),
+      db.from("messages").select("*,sender:profiles!messages_sender_id_fkey(id,full_name,avatar_url),recipient:profiles!messages_recipient_id_fkey(id,full_name,avatar_url)").or(`sender_id.eq.${profile.id},recipient_id.eq.${profile.id}`).order("created_at",{ascending:false}).limit(40),
+      isMentor
+        ?db.from("quizzes").select("*,assignments:quiz_assignments(*)").eq("mentor_id",profile.id).limit(4)
+        :db.from("quiz_assignments").select("*,quiz:quizzes(*)").eq("mentee_id",profile.id).eq("status","assigned").limit(4),
+    ]);
+    const seen=new Set(),convos=[];
+    for(const msg of(m.data||[])){const o=msg.sender_id===profile.id?msg.recipient:msg.sender;if(o&&!seen.has(o.id)){seen.add(o.id);convos.push({other:o,last:msg})}}
+    setD({sessions:s.data||[],goals:g.data||[],msgs:convos.slice(0,3),quizzes:q.data||[]});
+    setLoading(false);
+  };
+  const hour=new Date().getHours();
+  const greet=hour<12?"Good morning":hour<17?"Good afternoon":"Good evening";
+  const next=d.sessions[0];
+
+  return <div style={{padding:"28px 32px",maxWidth:860,display:"flex",flexDirection:"column",gap:24}} className="anim">
+    <div>
+      <div style={{fontSize:12,color:C.muted,fontWeight:500,marginBottom:4}}>{new Date().toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
+      <h1 style={{fontSize:26,fontWeight:800,color:C.text,letterSpacing:"-.03em"}}>{greet}, {profile.full_name?.split(" ")[0]} 👋</h1>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:14}}>
+      {[{l:"Upcoming Sessions",v:d.sessions.length,icon:"📅"},{l:"Active Goals",v:d.goals.filter(g=>g.status==="active").length,icon:"🎯"},{l:isMentor?"Quizzes Created":"Pending Quizzes",v:d.quizzes.length,icon:"📝"}].map((s,i)=>(
+        <div key={i} style={{background:"#fff",borderRadius:12,padding:"18px",border:`1px solid ${C.border}`,boxShadow:C.shadow}}>
+          <div style={{fontSize:22}}>{s.icon}</div>
+          <div style={{fontSize:28,fontWeight:800,color:C.p600,marginTop:6,letterSpacing:"-.04em"}}>{loading?"—":s.v}</div>
+          <div style={{fontSize:12.5,fontWeight:600,color:C.muted,marginTop:2}}>{s.l}</div>
+        </div>
+      ))}
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
+      <div style={{background:next?C.p700:"#fff",borderRadius:14,padding:"22px",border:`1px solid ${C.border}`,position:"relative",overflow:"hidden"}}>
+        {next&&<div style={{position:"absolute",right:-20,top:-20,width:100,height:100,borderRadius:"50%",background:"rgba(255,255,255,.06)"}}/>}
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:".07em",color:next?"rgba(255,255,255,.6)":C.muted,textTransform:"uppercase",marginBottom:10}}>Next Session</div>
+        {next?<>
+          <div style={{fontSize:17,fontWeight:800,color:"#fff",marginBottom:6}}>{next.title}</div>
+          <div style={{fontSize:13,color:"rgba(255,255,255,.7)"}}>with {isMentor?next.mentee?.full_name:next.mentor?.full_name}</div>
+          <div style={{marginTop:14,display:"flex",gap:8,alignItems:"center"}}>
+            <span style={{fontSize:13,fontWeight:700,color:"rgba(255,255,255,.9)"}}>{fmtDate(next.session_date)}</span>
+            <span style={{fontSize:11,background:"rgba(255,255,255,.15)",padding:"3px 10px",borderRadius:99,color:"rgba(255,255,255,.8)",fontWeight:600}}>{next.duration_minutes} min</span>
+          </div>
+        </>:<Empty icon="📅" title="No upcoming sessions" body="Book your first session."/>}
+      </div>
+      <div style={{background:"#fff",borderRadius:14,padding:"22px",border:`1px solid ${C.border}`,boxShadow:C.shadow}}>
+        <div style={{fontSize:11,fontWeight:700,letterSpacing:".07em",color:C.muted,textTransform:"uppercase",marginBottom:14}}>Goal Progress</div>
+        {d.goals.length===0?<Empty icon="🎯" title="No goals yet"/>:
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          {d.goals.slice(0,3).map(g=><div key={g.id}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+              <span style={{fontSize:12.5,fontWeight:600,color:C.text,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:8}}>{g.title}</span>
+              <span style={{fontSize:12,fontWeight:700,color:C.p500,flexShrink:0}}>{g.progress||0}%</span>
+            </div>
+            <ProgressBar value={g.progress||0}/>
+          </div>)}
+        </div>}
+      </div>
+    </div>
+    {d.msgs.length>0&&<div>
+      <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:12}}>Recent Conversations</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {d.msgs.map(c=><div key={c.other.id} style={{background:"#fff",borderRadius:11,padding:"12px 14px",border:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,boxShadow:C.shadow}}>
+          <Avatar name={c.other.full_name} size={36} url={c.other.avatar_url}/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:700,color:C.text}}>{c.other.full_name}</div>
+            <div style={{fontSize:12,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginTop:2}}>{c.last.content}</div>
+          </div>
+          <span style={{fontSize:11,color:C.light,flexShrink:0}}>{timeAgo(c.last.created_at)}</span>
+        </div>)}
+      </div>
+    </div>}
+  </div>;
+};
+
+/* ─────────────────────────────────────────────
+   SESSIONS
+───────────────────────────────────────────── */
+const Sessions=({profile})=>{
+  const [sessions,setSessions]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [filter,setFilter]=useState("upcoming");
+  const [modal,setModal]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [pairs,setPairs]=useState([]);
+  const [form,setForm]=useState({title:"",description:"",other_id:"",date:"",time:"",duration:"60",type:"video"});
+  const [Toast,showToast]=useToast();
+  const col=profile.role==="mentor"?"mentor_id":"mentee_id";
+
+  useEffect(()=>{load();loadPairs()},[filter]);
+  const load=async()=>{
+    setLoading(true);
+    const{data}=await db.from("sessions").select("*,mentor:profiles!sessions_mentor_id_fkey(id,full_name,avatar_url),mentee:profiles!sessions_mentee_id_fkey(id,full_name,avatar_url)").eq(col,profile.id).eq("status",filter).order("session_date",{ascending:filter==="upcoming"});
+    setSessions(data||[]);setLoading(false);
+  };
+  const loadPairs=async()=>{
+    const oCol=profile.role==="mentor"?"mentee_id":"mentor_id";
+    const fCol=profile.role==="mentor"?"mentor_id":"mentee_id";
+    const{data}=await db.from("pairings").select(`other:profiles!pairings_${oCol}_fkey(id,full_name)`).eq(fCol,profile.id);
+    setPairs(data?.map(p=>p.other)||[]);
+  };
+  const book=async()=>{
+    if(!form.title||!form.other_id||!form.date||!form.time){showToast("Fill in all required fields","error");return}
+    setSaving(true);
+    const mId=profile.role==="mentor"?profile.id:form.other_id;
+    const meId=profile.role==="mentee"?profile.id:form.other_id;
+    const{error}=await db.from("sessions").insert({title:form.title,description:form.description,mentor_id:mId,mentee_id:meId,org_id:profile.org_id,session_date:form.date,session_time:form.time,duration_minutes:parseInt(form.duration),type:form.type});
+    if(error){showToast(error.message,"error");setSaving(false);return}
+    await pushNotif(form.other_id,"Session Booked",`${profile.full_name} booked: ${form.title} on ${form.date}`,"session");
+    showToast("Session booked!");setSaving(false);setModal(false);setForm({title:"",description:"",other_id:"",date:"",time:"",duration:"60",type:"video"});load();
+  };
+  const markDone=async(s)=>{
+    await db.from("sessions").update({status:"completed"}).eq("id",s.id);
+    await pushNotif(s.mentee_id,"Session Completed",`Your session "${s.title}" has been marked complete.`,"session");
+    showToast("Marked complete");load();
+  };
+  const cancel=async(s)=>{
+    await db.from("sessions").update({status:"cancelled"}).eq("id",s.id);
+    showToast("Cancelled","warn");load();
+  };
+
+  return <div style={{padding:"28px 32px",maxWidth:780}} className="anim">
+    <Toast/>
+    <Modal open={modal} onClose={()=>setModal(false)} title="Book a Session">
+      <Field label="Session title" placeholder="e.g. Brand Strategy Kickoff" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} required/>
+      <Select label={profile.role==="mentor"?"Select Mentee":"Select Mentor"} value={form.other_id} onChange={e=>setForm(f=>({...f,other_id:e.target.value}))} options={[{value:"",label:"-- Choose --"},...pairs.map(p=>({value:p.id,label:p.full_name}))]}/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <Field label="Date" type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} required/>
+        <Field label="Time" type="time" value={form.time} onChange={e=>setForm(f=>({...f,time:e.target.value}))} required/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <Select label="Duration" value={form.duration} onChange={e=>setForm(f=>({...f,duration:e.target.value}))} options={["30","45","60","90","120"].map(v=>({value:v,label:`${v} min`}))}/>
+        <Select label="Format" value={form.type} onChange={e=>setForm(f=>({...f,type:e.target.value}))} options={[{value:"video",label:"📹 Video"},{value:"in-person",label:"📍 In-person"},{value:"phone",label:"📞 Phone"}]}/>
+      </div>
+      <Field label="Notes (optional)" placeholder="Topics to cover…" value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={2}/>
+      <Btn onClick={book} loading={saving} style={{width:"100%",marginTop:6}}>Book Session</Btn>
+    </Modal>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
+      <div><h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em"}}>Sessions</h1><p style={{fontSize:13,color:C.muted,marginTop:3}}>Your mentorship meetings</p></div>
+      <Btn onClick={()=>setModal(true)}>+ Book Session</Btn>
+    </div>
+    <div style={{display:"flex",gap:4,padding:4,background:C.n50,borderRadius:10,marginBottom:20,width:"fit-content"}}>
+      {["upcoming","completed","cancelled"].map(f=><button key={f} onClick={()=>setFilter(f)} style={{padding:"7px 16px",borderRadius:7,border:"none",fontSize:12.5,fontWeight:600,background:filter===f?C.p600:"transparent",color:filter===f?"#fff":C.muted,cursor:"pointer"}}>{f.charAt(0).toUpperCase()+f.slice(1)}</button>)}
+    </div>
+    {loading?<div style={{padding:40,textAlign:"center"}}><Spinner/></div>:
+    sessions.length===0?<Empty icon="📅" title={`No ${filter} sessions`} action={filter==="upcoming"&&<Btn onClick={()=>setModal(true)}>Book First Session</Btn>}/>:
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {sessions.map(s=>{
+        const other=profile.role==="mentor"?s.mentee:s.mentor;
+        return <div key={s.id} style={{background:"#fff",borderRadius:13,padding:"16px 20px",border:`1px solid ${C.border}`,boxShadow:C.shadow,display:"flex",alignItems:"center",gap:16}}>
+          <div style={{width:44,height:44,borderRadius:10,background:C.p50,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            <div style={{fontSize:9,fontWeight:700,color:C.p400,textTransform:"uppercase"}}>{fmtDate(s.session_date).split(" ")[0]}</div>
+            <div style={{fontSize:18,fontWeight:800,color:C.p600,lineHeight:1}}>{fmtDate(s.session_date).split(" ")[1]}</div>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:14,fontWeight:700,color:C.text}}>{s.title}</div>
+            <div style={{fontSize:12,color:C.muted,marginTop:3}}>with {other?.full_name} · {fmtTime(s.session_time)} · {s.duration_minutes} min</div>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
+            <Badge label={s.type==="video"?"📹 Video":s.type==="in-person"?"📍 In-person":"📞 Phone"}/>
+            {s.status==="upcoming"&&profile.role==="mentor"&&<Btn size="sm" onClick={()=>markDone(s)}>Done</Btn>}
+            {s.status==="upcoming"&&<Btn size="sm" variant="outline" onClick={()=>cancel(s)}>Cancel</Btn>}
+          </div>
+        </div>;
+      })}
+    </div>}
+  </div>;
+};
+
+/* ─────────────────────────────────────────────
+   GOALS
+───────────────────────────────────────────── */
+const Goals=({profile})=>{
+  const [goals,setGoals]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [expanded,setExpanded]=useState(null);
+  const [modal,setModal]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [Toast,showToast]=useToast();
+  const [form,setForm]=useState({title:"",description:"",category:"Personal Growth",due_date:"",milestones:["","",""]});
+  const catColors={"Business":{bg:"#eff6ff",c:"#1d4ed8"},"Community":{bg:C.p50,c:C.p700},"Thought Leadership":{bg:"#fefce8",c:"#a16207"},"Personal Growth":{bg:"#fdf4ff",c:"#7e22ce"},"Personal":{bg:"#fff7ed",c:"#c2410c"}};
+
+  useEffect(()=>{load()},[]);
+  const load=async()=>{
+    setLoading(true);
+    const{data}=await db.from("goals").select("*,milestones(*)").eq("owner_id",profile.id).order("created_at",{ascending:false});
+    setGoals(data||[]);setLoading(false);
+  };
+  const save=async()=>{
+    if(!form.title){showToast("Enter a title","error");return}
+    setSaving(true);
+    const{data:g,error}=await db.from("goals").insert({title:form.title,description:form.description,category:form.category,due_date:form.due_date||null,owner_id:profile.id,org_id:profile.org_id,progress:0}).select().single();
+    if(error){showToast(error.message,"error");setSaving(false);return}
+    const ms=form.milestones.filter(m=>m.trim());
+    if(ms.length&&g)await db.from("milestones").insert(ms.map((t,i)=>({goal_id:g.id,title:t,order_index:i})));
+    showToast("Goal added!");setSaving(false);setModal(false);setForm({title:"",description:"",category:"Personal Growth",due_date:"",milestones:["","",""]});load();
+  };
+  const toggleMS=async(mId,goalId,done)=>{
+    await db.from("milestones").update({completed:done}).eq("id",mId);
+    const g=goals.find(x=>x.id===goalId);
+    if(g){
+      const ms=g.milestones.map(m=>m.id===mId?{...m,completed:done}:m);
+      const prog=ms.length?Math.round(ms.filter(m=>m.completed).length/ms.length*100):0;
+      await db.from("goals").update({progress:prog}).eq("id",goalId);
+    }
+    load();
+  };
+
+  return <div style={{padding:"28px 32px",maxWidth:760}} className="anim">
+    <Toast/>
+    <Modal open={modal} onClose={()=>setModal(false)} title="Add a Goal">
+      <Field label="Goal title" placeholder="What do you want to achieve?" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} required/>
+      <Field label="Description" placeholder="Describe what success looks like…" value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={2}/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <Select label="Category" value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))} options={Object.keys(catColors)}/>
+        <Field label="Due date" type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))}/>
+      </div>
+      <div style={{marginBottom:15}}>
+        <label style={{display:"block",fontSize:12.5,fontWeight:600,color:C.muted,marginBottom:6}}>Milestones (optional)</label>
+        {form.milestones.map((m,i)=><input key={i} placeholder={`Milestone ${i+1}`} value={m} onChange={e=>{const ms=[...form.milestones];ms[i]=e.target.value;setForm(f=>({...f,milestones:ms}))}} style={{width:"100%",padding:"9px 12px",borderRadius:8,border:`1.5px solid ${C.border}`,fontSize:13,marginBottom:7,outline:"none",display:"block",color:C.text}}/>)}
+      </div>
+      <Btn onClick={save} loading={saving} style={{width:"100%"}}>Save Goal</Btn>
+    </Modal>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
+      <div><h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em"}}>Goals</h1><p style={{fontSize:13,color:C.muted,marginTop:3}}>Track your progress</p></div>
+      <Btn onClick={()=>setModal(true)}>+ Add Goal</Btn>
+    </div>
+    {loading?<div style={{padding:40,textAlign:"center"}}><Spinner/></div>:
+    goals.length===0?<Empty icon="🎯" title="No goals yet" body="Set your first goal and start tracking milestones." action={<Btn onClick={()=>setModal(true)}>Add First Goal</Btn>}/>:
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {goals.map(g=>{
+        const cat=catColors[g.category]||catColors["Personal Growth"];
+        const ms=g.milestones||[];
+        const isOpen=expanded===g.id;
+        return <div key={g.id} style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,boxShadow:C.shadow,overflow:"hidden"}}>
+          <div style={{padding:"18px 20px",cursor:"pointer"}} onClick={()=>setExpanded(isOpen?null:g.id)}>
+            <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:7,flexWrap:"wrap"}}>
+                  <span style={{fontSize:14.5,fontWeight:700,color:C.text}}>{g.title}</span>
+                  <Badge label={g.category} bg={cat.bg} color={cat.c}/>
+                </div>
+                {g.due_date&&<div style={{fontSize:12,color:C.light,marginBottom:8}}>Due {fmtDate(g.due_date)} · {ms.length} milestone{ms.length!==1?"s":""}</div>}
+                <ProgressBar value={g.progress||0}/>
+              </div>
+              <div style={{fontSize:22,fontWeight:800,color:C.p600,letterSpacing:"-.04em",flexShrink:0}}>{g.progress||0}%</div>
+            </div>
+          </div>
+          {isOpen&&ms.length>0&&<div style={{padding:"14px 20px 18px",borderTop:`1px solid ${C.n50}`}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".06em",marginBottom:10}}>Milestones</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {ms.sort((a,b)=>a.order_index-b.order_index).map(m=>(
+                <div key={m.id} style={{display:"flex",gap:10,alignItems:"center",cursor:"pointer"}} onClick={()=>toggleMS(m.id,g.id,!m.completed)}>
+                  <div style={{width:18,height:18,borderRadius:"50%",border:`2px solid ${m.completed?C.p500:C.n300}`,background:m.completed?C.p500:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all .2s"}}>
+                    {m.completed&&<span style={{color:"#fff",fontSize:10,fontWeight:700}}>✓</span>}
+                  </div>
+                  <span style={{fontSize:13,color:m.completed?C.muted:C.text,textDecoration:m.completed?"line-through":"none"}}>{m.title}</span>
+                </div>
+              ))}
+            </div>
+          </div>}
+        </div>;
+      })}
+    </div>}
+  </div>;
+};
+
+/* ─────────────────────────────────────────────
+   QUIZZES
+───────────────────────────────────────────── */
+const Quizzes=({profile})=>profile.role==="mentor"?<MentorQuizzes profile={profile}/>:<MenteeQuizzes profile={profile}/>;
+
+const MentorQuizzes=({profile})=>{
+  const [quizzes,setQuizzes]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [createModal,setCreateModal]=useState(false);
+  const [assignModal,setAssignModal]=useState(null);
+  const [gradeModal,setGradeModal]=useState(null);
+  const [mentees,setMentees]=useState([]);
+  const [saving,setSaving]=useState(false);
+  const [Toast,showToast]=useToast();
+  const [form,setForm]=useState({title:"",description:"",total_marks:"100",due_date:"",questions:[{question:"",type:"text",marks:"10",options:[""]}]});
+
+  useEffect(()=>{load();loadMentees()},[]);
+  const load=async()=>{
+    setLoading(true);
+    const{data}=await db.from("quizzes").select("*,questions:quiz_questions(*),assignments:quiz_assignments(*,mentee:profiles!quiz_assignments_mentee_id_fkey(id,full_name))").eq("mentor_id",profile.id).order("created_at",{ascending:false});
+    setQuizzes(data||[]);setLoading(false);
+  };
+  const loadMentees=async()=>{
+    const{data}=await db.from("pairings").select("mentee:profiles!pairings_mentee_id_fkey(id,full_name)").eq("mentor_id",profile.id);
+    setMentees(data?.map(p=>p.mentee)||[]);
+  };
+  const create=async()=>{
+    if(!form.title){showToast("Enter a title","error");return}
+    setSaving(true);
+    const{data:q,error}=await db.from("quizzes").insert({title:form.title,description:form.description,mentor_id:profile.id,org_id:profile.org_id,total_marks:parseInt(form.total_marks)||100,due_date:form.due_date||null}).select().single();
+    if(error){showToast(error.message,"error");setSaving(false);return}
+    const qs=form.questions.filter(x=>x.question);
+    if(qs.length)await db.from("quiz_questions").insert(qs.map((x,i)=>({quiz_id:q.id,question:x.question,type:x.type,marks:parseInt(x.marks)||10,options:x.type==="multiple_choice"?x.options.filter(o=>o):null,order_index:i})));
+    showToast("Quiz created!");setSaving(false);setCreateModal(false);setForm({title:"",description:"",total_marks:"100",due_date:"",questions:[{question:"",type:"text",marks:"10",options:[""]}]});load();
+  };
+  const publish=async id=>{await db.from("quizzes").update({status:"published"}).eq("id",id);showToast("Published!");load()};
+  const assign=async(quizId,menteeId)=>{
+    const{error}=await db.from("quiz_assignments").insert({quiz_id:quizId,mentee_id:menteeId,assigned_by:profile.id});
+    if(error){showToast(error.message,"error");return}
+    await pushNotif(menteeId,"Quiz Assigned","Your mentor assigned you a new quiz. Check it out!","quiz");
+    showToast("Assigned!");setAssignModal(null);load();
+  };
+  const grade=async(assignId,score,feedback,menteeId,quizTitle,total)=>{
+    await db.from("quiz_assignments").update({score:parseInt(score),feedback,status:"graded",graded_at:new Date().toISOString()}).eq("id",assignId);
+    await pushNotif(menteeId,"Quiz Graded",`Score: ${score}/${total} on "${quizTitle}"`,"quiz");
+    showToast("Grade saved!");setGradeModal(null);load();
+  };
+  const addQ=()=>setForm(f=>({...f,questions:[...f.questions,{question:"",type:"text",marks:"10",options:[""]}]}));
+  const setQ=(i,k,v)=>setForm(f=>{const qs=[...f.questions];qs[i]={...qs[i],[k]:v};return{...f,questions:qs}});
+
+  return <div style={{padding:"28px 32px",maxWidth:820}} className="anim">
+    <Toast/>
+    <Modal open={createModal} onClose={()=>setCreateModal(false)} title="Create a Quiz" wide>
+      <Field label="Quiz title" placeholder="e.g. Week 1 Assessment" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} required/>
+      <Field label="Description" placeholder="Brief description…" value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={2}/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <Field label="Total marks" value={form.total_marks} onChange={e=>setForm(f=>({...f,total_marks:e.target.value}))}/>
+        <Field label="Due date" type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))}/>
+      </div>
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:10}}>Questions</div>
+        {form.questions.map((q,i)=><div key={i} style={{background:C.n50,borderRadius:10,padding:"14px",marginBottom:10}}>
+          <Field label={`Q${i+1}`} placeholder="Enter question…" value={q.question} onChange={e=>setQ(i,"question",e.target.value)}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <Select label="Type" value={q.type} onChange={e=>setQ(i,"type",e.target.value)} options={[{value:"text",label:"Text answer"},{value:"multiple_choice",label:"Multiple choice"}]}/>
+            <Field label="Marks" value={q.marks} onChange={e=>setQ(i,"marks",e.target.value)}/>
+          </div>
+          {q.type==="multiple_choice"&&<>
+            {q.options.map((o,j)=><input key={j} placeholder={`Option ${j+1}`} value={o} onChange={e=>{const ops=[...q.options];ops[j]=e.target.value;setQ(i,"options",ops)}} style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1px solid ${C.border}`,fontSize:13,marginBottom:6,outline:"none",display:"block"}}/>)}
+            <button onClick={()=>setQ(i,"options",[...q.options,""])} style={{fontSize:12,color:C.p600,background:"none",border:"none",cursor:"pointer",fontWeight:600}}>+ option</button>
+          </>}
+        </div>)}
+        <button onClick={addQ} style={{fontSize:12.5,color:C.p600,background:C.p50,border:"none",cursor:"pointer",fontWeight:600,padding:"7px 14px",borderRadius:7}}>+ Add Question</button>
+      </div>
+      <Btn onClick={create} loading={saving} style={{width:"100%"}}>Create Quiz (Draft)</Btn>
+    </Modal>
+    {assignModal&&<Modal open onClose={()=>setAssignModal(null)} title={`Assign "${assignModal.title}"`}>
+      {mentees.length===0?<p style={{color:C.muted,fontSize:14,textAlign:"center",padding:"20px 0"}}>No mentees paired yet.</p>:
+      mentees.map(m=><button key={m.id} onClick={()=>assign(assignModal.id,m.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px",borderRadius:10,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",width:"100%",marginBottom:8}}>
+        <Avatar name={m.full_name} size={36}/><span style={{fontSize:14,fontWeight:600,color:C.text}}>{m.full_name}</span>
+      </button>)}
+    </Modal>}
+    {gradeModal&&<GradeModal assignment={gradeModal} onSave={grade} onClose={()=>setGradeModal(null)}/>}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
+      <div><h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em"}}>Quizzes</h1><p style={{fontSize:13,color:C.muted,marginTop:3}}>Create and manage assessments</p></div>
+      <Btn onClick={()=>setCreateModal(true)}>+ Create Quiz</Btn>
+    </div>
+    {loading?<div style={{padding:40,textAlign:"center"}}><Spinner/></div>:
+    quizzes.length===0?<Empty icon="📝" title="No quizzes yet" action={<Btn onClick={()=>setCreateModal(true)}>Create First Quiz</Btn>}/>:
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {quizzes.map(q=>{
+        const pending=q.assignments?.filter(a=>a.status==="submitted")||[];
+        const graded=q.assignments?.filter(a=>a.status==="graded")||[];
+        return <div key={q.id} style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,boxShadow:C.shadow,padding:"18px 22px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:14}}>
+            <div style={{flex:1}}>
+              <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
+                <span style={{fontSize:14.5,fontWeight:700,color:C.text}}>{q.title}</span>
+                <Badge label={q.status} bg={q.status==="published"?C.successL:C.n50} color={q.status==="published"?C.success:C.muted}/>
+                {pending.length>0&&<Badge label={`${pending.length} to grade`} bg="#fef9ee" color={C.warn}/>}
+              </div>
+              <div style={{fontSize:12,color:C.muted}}>{q.questions?.length||0} questions · {q.total_marks} marks{q.due_date?` · Due ${fmtDate(q.due_date)}`:""}</div>
+            </div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end",flexShrink:0}}>
+              {q.status==="draft"&&<Btn size="sm" variant="success" onClick={()=>publish(q.id)}>Publish</Btn>}
+              {q.status==="published"&&<Btn size="sm" onClick={()=>setAssignModal(q)}>Assign</Btn>}
+              {pending.map(a=><Btn key={a.id} size="sm" variant="warning" onClick={()=>setGradeModal({...a,quiz:q})}>Grade: {a.mentee?.full_name}</Btn>)}
+            </div>
+          </div>
+          {graded.length>0&&<div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.n50}`,display:"flex",gap:8,flexWrap:"wrap"}}>
+            {graded.map(a=><span key={a.id} style={{fontSize:12,padding:"4px 10px",borderRadius:8,background:C.p50,color:C.p700}}>
+              {a.mentee?.full_name}: <strong>{a.score}/{q.total_marks}</strong>
+            </span>)}
+          </div>}
+        </div>;
+      })}
+    </div>}
+  </div>;
+};
+
+const GradeModal=({assignment,onSave,onClose})=>{
+  const [score,setScore]=useState(assignment.score||"");
+  const [feedback,setFeedback]=useState(assignment.feedback||"");
+  const [answers,setAnswers]=useState([]);
+  const [saving,setSaving]=useState(false);
+  useEffect(()=>{db.from("quiz_answers").select("*,question:quiz_questions(*)").eq("assignment_id",assignment.id).then(({data})=>setAnswers(data||[]))},[]);
+  return <Modal open onClose={onClose} title={`Grade: ${assignment.mentee?.full_name}`} wide>
+    {answers.length>0&&<div style={{marginBottom:18}}>
+      <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:10}}>Answers</div>
+      {answers.map((a,i)=><div key={a.id} style={{background:C.n50,borderRadius:9,padding:"11px",marginBottom:8}}>
+        <div style={{fontSize:12.5,fontWeight:600,color:C.text,marginBottom:5}}>Q{i+1}: {a.question?.question}</div>
+        <div style={{fontSize:13,color:C.muted,background:"#fff",padding:"8px 10px",borderRadius:7,border:`1px solid ${C.border}`}}>{a.answer||"No answer"}</div>
+      </div>)}
+    </div>}
+    <Field label={`Score (out of ${assignment.quiz?.total_marks||100})`} type="number" placeholder="e.g. 85" value={score} onChange={e=>setScore(e.target.value)}/>
+    <Field label="Feedback" placeholder="Write feedback…" value={feedback} onChange={e=>setFeedback(e.target.value)} rows={3}/>
+    <Btn loading={saving} onClick={async()=>{setSaving(true);await onSave(assignment.id,score,feedback,assignment.mentee_id,assignment.quiz?.title,assignment.quiz?.total_marks);setSaving(false)}} style={{width:"100%"}}>Save Grade</Btn>
+  </Modal>;
+};
+
+const MenteeQuizzes=({profile})=>{
+  const [assignments,setAssignments]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [taking,setTaking]=useState(null);
+  const [Toast,showToast]=useToast();
+  useEffect(()=>{load()},[]);
+  const load=async()=>{
+    setLoading(true);
+    const{data}=await db.from("quiz_assignments").select("*,quiz:quizzes(*,questions:quiz_questions(*)),mentor:profiles!quiz_assignments_assigned_by_fkey(full_name)").eq("mentee_id",profile.id).order("created_at",{ascending:false});
+    setAssignments(data||[]);setLoading(false);
+  };
+  return <div style={{padding:"28px 32px",maxWidth:760}} className="anim">
+    <Toast/>
+    {taking&&<TakeQuiz assignment={taking} profile={profile} onDone={()=>{setTaking(null);load();showToast("Submitted!")}} onClose={()=>setTaking(null)}/>}
+    <h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em",marginBottom:4}}>Quizzes</h1>
+    <p style={{fontSize:13,color:C.muted,marginBottom:24}}>Assignments from your mentor</p>
+    {loading?<div style={{padding:40,textAlign:"center"}}><Spinner/></div>:
+    assignments.length===0?<Empty icon="📝" title="No quizzes assigned yet"/>:
+    <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      {assignments.map(a=><div key={a.id} style={{background:"#fff",borderRadius:13,border:`1px solid ${C.border}`,boxShadow:C.shadow,padding:"18px 22px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:14}}>
+          <div style={{flex:1}}>
+            <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
+              <span style={{fontSize:14.5,fontWeight:700,color:C.text}}>{a.quiz?.title}</span>
+              <Badge label={a.status} bg={a.status==="graded"?C.successL:a.status==="submitted"?C.p50:C.warnL} color={a.status==="graded"?C.success:a.status==="submitted"?C.p600:C.warn}/>
+            </div>
+            <div style={{fontSize:12,color:C.muted}}>From {a.mentor?.full_name} · {a.quiz?.questions?.length||0} questions · {a.quiz?.total_marks} marks</div>
+            {a.status==="graded"&&<div style={{marginTop:10,background:C.successL,borderRadius:9,padding:"10px 14px"}}>
+              <div style={{fontSize:14,fontWeight:700,color:C.success}}>Score: {a.score}/{a.quiz?.total_marks}</div>
+              {a.feedback&&<div style={{fontSize:13,color:C.text,marginTop:4}}>{a.feedback}</div>}
+            </div>}
+          </div>
+          {a.status==="assigned"&&<Btn size="sm" onClick={()=>setTaking(a)}>Start →</Btn>}
+        </div>
+      </div>)}
+    </div>}
+  </div>;
+};
+
+const TakeQuiz=({assignment,profile,onDone,onClose})=>{
+  const [answers,setAnswers]=useState({});
+  const [saving,setSaving]=useState(false);
+  const questions=(assignment.quiz?.questions||[]).sort((a,b)=>a.order_index-b.order_index);
+  const submit=async()=>{
+    setSaving(true);
+    await db.from("quiz_answers").upsert(Object.entries(answers).map(([qId,ans])=>({assignment_id:assignment.id,question_id:qId,answer:ans})));
+    await db.from("quiz_assignments").update({status:"submitted",submitted_at:new Date().toISOString()}).eq("id",assignment.id);
+    await pushNotif(assignment.assigned_by,"Quiz Submitted",`${profile.full_name} submitted: ${assignment.quiz?.title}`,"quiz");
+    setSaving(false);onDone();
+  };
+  return <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20,overflowY:"auto"}}>
+    <div style={{background:"#fff",borderRadius:18,padding:"28px",width:"100%",maxWidth:580,boxShadow:C.shadowL,maxHeight:"90vh",overflowY:"auto",animation:"fadeUp .2s ease"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+        <h2 style={{fontSize:17,fontWeight:800,color:C.text}}>{assignment.quiz?.title}</h2>
+        <button onClick={onClose} style={{width:28,height:28,borderRadius:"50%",border:"none",background:C.n50,fontSize:16,cursor:"pointer"}}>✕</button>
+      </div>
+      <p style={{fontSize:13,color:C.muted,marginBottom:20}}>{questions.length} questions · {assignment.quiz?.total_marks} marks</p>
+      <div style={{display:"flex",flexDirection:"column",gap:18}}>
+        {questions.map((q,i)=><div key={q.id} style={{background:C.n50,borderRadius:11,padding:"14px"}}>
+          <div style={{fontSize:13.5,fontWeight:700,color:C.text,marginBottom:10}}>Q{i+1}: {q.question} <span style={{fontSize:12,color:C.muted,fontWeight:400}}>({q.marks})</span></div>
+          {q.type==="multiple_choice"&&q.options?
+            <div style={{display:"flex",flexDirection:"column",gap:7}}>
+              {q.options.map((o,j)=><label key={j} style={{display:"flex",alignItems:"center",gap:9,cursor:"pointer",padding:"9px 12px",borderRadius:8,border:`1.5px solid ${answers[q.id]===o?C.p500:C.border}`,background:answers[q.id]===o?C.p50:"#fff"}}>
+                <input type="radio" name={q.id} value={o} checked={answers[q.id]===o} onChange={()=>setAnswers(a=>({...a,[q.id]:o}))} style={{accentColor:C.p500}}/>{o}
+              </label>)}
+            </div>:
+            <textarea placeholder="Your answer…" value={answers[q.id]||""} onChange={e=>setAnswers(a=>({...a,[q.id]:e.target.value}))} rows={3} style={{width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",resize:"vertical",fontFamily:"inherit"}}/>}
+        </div>)}
+      </div>
+      <Btn onClick={submit} loading={saving} style={{width:"100%",marginTop:20}}>Submit Quiz</Btn>
+    </div>
+  </div>;
+};
+
+/* ─────────────────────────────────────────────
+   MESSAGES
+───────────────────────────────────────────── */
+const Messages=({profile})=>{
+  const [convos,setConvos]=useState([]);
+  const [activeId,setActiveId]=useState(null);
+  const [msgs,setMsgs]=useState([]);
+  const [input,setInput]=useState("");
+  const [loading,setLoading]=useState(true);
+  const [sending,setSending]=useState(false);
+  const [pairs,setPairs]=useState([]);
+  const [newModal,setNewModal]=useState(false);
+  const bottom=useRef();
+
+  useEffect(()=>{loadConvos();loadPairs()},[]);
+  useEffect(()=>{if(activeId)loadMsgs(activeId)},[activeId]);
+  useEffect(()=>{bottom.current?.scrollIntoView({behavior:"smooth"})},[msgs]);
+
+  const loadConvos=async()=>{
+    setLoading(true);
+    const{data}=await db.from("messages").select("*,sender:profiles!messages_sender_id_fkey(id,full_name,avatar_url),recipient:profiles!messages_recipient_id_fkey(id,full_name,avatar_url)").or(`sender_id.eq.${profile.id},recipient_id.eq.${profile.id}`).order("created_at",{ascending:false});
+    const seen=new Set(),cvs=[];
+    for(const m of(data||[])){const o=m.sender_id===profile.id?m.recipient:m.sender;if(o&&!seen.has(o.id)){seen.add(o.id);cvs.push({other:o,last:m,unread:!m.read&&m.recipient_id===profile.id})}}
+    setConvos(cvs);if(!activeId&&cvs.length)setActiveId(cvs[0].other.id);setLoading(false);
+  };
+  const loadPairs=async()=>{
+    const oCol=profile.role==="mentor"?"mentee_id":"mentor_id";
+    const fCol=profile.role==="mentor"?"mentor_id":"mentee_id";
+    const{data}=await db.from("pairings").select(`other:profiles!pairings_${oCol}_fkey(id,full_name,avatar_url)`).eq(fCol,profile.id);
+    setPairs(data?.map(p=>p.other)||[]);
+  };
+  const loadMsgs=async otherId=>{
+    const{data}=await db.from("messages").select("*,sender:profiles!messages_sender_id_fkey(id,full_name,avatar_url)").or(`and(sender_id.eq.${profile.id},recipient_id.eq.${otherId}),and(sender_id.eq.${otherId},recipient_id.eq.${profile.id})`).order("created_at",{ascending:true});
+    setMsgs(data||[]);
+    await db.from("messages").update({read:true}).eq("recipient_id",profile.id).eq("sender_id",otherId);
+  };
+  const send=async()=>{
+    if(!input.trim()||!activeId)return;
+    setSending(true);
+    await db.from("messages").insert({sender_id:profile.id,recipient_id:activeId,content:input.trim()});
+    setInput("");loadMsgs(activeId);loadConvos();setSending(false);
+  };
+  const startWith=id=>{setActiveId(id);setNewModal(false);if(!convos.find(c=>c.other.id===id)){const o=pairs.find(p=>p.id===id);if(o)setConvos(cv=>[{other:o,last:null,unread:false},...cv])}};
+  const activeOther=convos.find(c=>c.other.id===activeId)?.other;
+
+  return <div style={{display:"flex",flex:1,height:"100%",overflow:"hidden"}}>
+    <Modal open={newModal} onClose={()=>setNewModal(false)} title="New Message">
+      {pairs.map(p=><button key={p.id} onClick={()=>startWith(p.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px",borderRadius:10,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",width:"100%",marginBottom:8}}>
+        <Avatar name={p.full_name} size={38} url={p.avatar_url}/><span style={{fontSize:14,fontWeight:600,color:C.text}}>{p.full_name}</span>
+      </button>)}
+      {pairs.length===0&&<p style={{color:C.muted,fontSize:14,textAlign:"center",padding:"20px 0"}}>No connections yet.</p>}
+    </Modal>
+    <div style={{width:264,borderRight:`1px solid ${C.border}`,display:"flex",flexDirection:"column",flexShrink:0}}>
+      <div style={{padding:"16px 14px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:`1px solid ${C.n50}`}}>
+        <span style={{fontSize:14,fontWeight:700,color:C.text}}>Messages</span>
+        <button onClick={()=>setNewModal(true)} style={{width:26,height:26,borderRadius:"50%",border:"none",background:C.p50,color:C.p600,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:"6px 8px"}}>
+        {loading?<div style={{padding:20,textAlign:"center"}}><Spinner/></div>:
+        convos.length===0?<Empty icon="💬" title="No messages"/>:
+        convos.map(c=><div key={c.other.id} onClick={()=>setActiveId(c.other.id)} style={{display:"flex",gap:10,alignItems:"center",padding:"10px 8px",borderRadius:9,cursor:"pointer",background:activeId===c.other.id?C.p50:"transparent",marginBottom:2}}>
+          <Avatar name={c.other.full_name} size={38} url={c.other.avatar_url}/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:700,color:C.text}}>{c.other.full_name}</div>
+            <div style={{fontSize:11.5,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginTop:1}}>{c.last?.content||"Say hello"}</div>
+          </div>
+          {c.unread&&<div style={{width:8,height:8,borderRadius:"50%",background:C.p500,flexShrink:0}}/>}
+        </div>)}
+      </div>
+    </div>
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {activeOther?<>
+        <div style={{padding:"12px 20px",borderBottom:`1px solid ${C.border}`,display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+          <Avatar name={activeOther.full_name} size={34} url={activeOther.avatar_url}/>
+          <span style={{fontSize:14,fontWeight:700,color:C.text}}>{activeOther.full_name}</span>
+        </div>
+        <div style={{flex:1,overflowY:"auto",padding:"20px",display:"flex",flexDirection:"column",gap:12}}>
+          {msgs.map(m=><div key={m.id} style={{display:"flex",gap:8,flexDirection:m.sender_id===profile.id?"row-reverse":"row",alignItems:"flex-end"}}>
+            {m.sender_id!==profile.id&&<Avatar name={m.sender?.full_name||"?"} size={26} url={m.sender?.avatar_url}/>}
+            <div style={{maxWidth:"66%",padding:"10px 13px",borderRadius:m.sender_id===profile.id?"14px 14px 3px 14px":"14px 14px 14px 3px",background:m.sender_id===profile.id?C.p600:"#fff",color:m.sender_id===profile.id?"#fff":C.text,fontSize:13,lineHeight:1.5,border:m.sender_id===profile.id?"none":`1px solid ${C.border}`,boxShadow:m.sender_id!==profile.id?C.shadow:"none"}}>
+              {m.content}
+              <div style={{fontSize:10,marginTop:4,opacity:.55,textAlign:m.sender_id===profile.id?"right":"left"}}>{new Date(m.created_at).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}</div>
+            </div>
+          </div>)}
+          <div ref={bottom}/>
+        </div>
+        <div style={{padding:"12px 20px",borderTop:`1px solid ${C.border}`,display:"flex",gap:10,flexShrink:0}}>
+          <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&send()} placeholder="Write a message…" style={{flex:1,padding:"10px 14px",borderRadius:10,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",background:C.n50,color:C.text}}/>
+          <Btn onClick={send} loading={sending}>Send</Btn>
+        </div>
+      </>:<Empty icon="💬" title="Select a conversation"/>}
+    </div>
+  </div>;
+};
+
+/* ─────────────────────────────────────────────
+   RESOURCES
+───────────────────────────────────────────── */
+const Resources=({profile})=>{
+  const [resources,setResources]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [search,setSearch]=useState("");
+  const [modal,setModal]=useState(false);
+  const [commentModal,setCommentModal]=useState(null);
+  const [saving,setSaving]=useState(false);
+  const [uploading,setUploading]=useState(false);
+  const [Toast,showToast]=useToast();
+  const [form,setForm]=useState({title:"",description:"",file_type:"pdf",file_url:"",tags:""});
+  const [file,setFile]=useState(null);
+  const isMentor=profile.role==="mentor";
+  const icons={doc:"📄",sheet:"📊",pdf:"📕",image:"🖼️",video:"🎬",link:"🔗",other:"📁"};
+
+  useEffect(()=>{load()},[]);
+  const load=async()=>{
+    setLoading(true);
+    const{data}=await db.from("resources").select("*,uploader:profiles!resources_uploader_id_fkey(id,full_name),comments:resource_comments(*)").eq("org_id",profile.org_id).order("created_at",{ascending:false});
+    setResources(data||[]);setLoading(false);
+  };
+  const share=async()=>{
+    if(!form.title){showToast("Enter a title","error");return}
+    setSaving(true);
+    let url=form.file_url,path="";
+    if(file){
+      setUploading(true);
+      try{path=`resources/${profile.org_id}/${Date.now()}_${file.name}`;url=await uploadFile(file,path)}
+      catch(e){showToast("Upload failed","error");setSaving(false);setUploading(false);return}
+      setUploading(false);
+    }
+    const tags=form.tags.split(",").map(t=>t.trim()).filter(Boolean);
+    const{error}=await db.from("resources").insert({title:form.title,description:form.description,file_type:form.file_type,file_url:url,file_path:path,file_size:file?`${(file.size/1024).toFixed(0)} KB`:"",tags,uploader_id:profile.id,org_id:profile.org_id});
+    setSaving(false);
+    if(error){showToast(error.message,"error");return}
+    showToast("Shared!");setModal(false);setForm({title:"",description:"",file_type:"pdf",file_url:"",tags:""});setFile(null);load();
+  };
+  const download=async r=>{
+    await db.from("resources").update({download_count:(r.download_count||0)+1}).eq("id",r.id);
+    if(r.file_url)window.open(r.file_url,"_blank");
+  };
+  const filtered=resources.filter(r=>r.title.toLowerCase().includes(search.toLowerCase())||(r.tags||[]).some(t=>t.toLowerCase().includes(search.toLowerCase())));
+
+  return <div style={{padding:"28px 32px",maxWidth:780}} className="anim">
+    <Toast/>
+    {isMentor&&<Modal open={modal} onClose={()=>setModal(false)} title="Share a Resource">
+      <Field label="Title" placeholder="e.g. Brand Strategy Framework" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} required/>
+      <Field label="Description" placeholder="Brief description…" value={form.description} onChange={e=>setForm(f=>({...f,description:e.target.value}))} rows={2}/>
+      <Select label="Type" value={form.file_type} onChange={e=>setForm(f=>({...f,file_type:e.target.value}))} options={[{value:"pdf",label:"📕 PDF"},{value:"doc",label:"📄 Document"},{value:"sheet",label:"📊 Spreadsheet"},{value:"image",label:"🖼️ Image"},{value:"video",label:"🎬 Video"},{value:"link",label:"🔗 Link"},{value:"other",label:"📁 Other"}]}/>
+      <div style={{marginBottom:14}}>
+        <label style={{display:"block",fontSize:12.5,fontWeight:600,color:C.muted,marginBottom:5}}>Upload File <span style={{fontWeight:400,color:C.light}}>(max 50MB)</span></label>
+        <input type="file" onChange={e=>setFile(e.target.files[0])} style={{width:"100%",padding:"9px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:12.5,background:"#fff"}}/>
+        {file&&<div style={{fontSize:12,color:C.p600,marginTop:4}}>✓ {file.name}</div>}
+      </div>
+      <Field label="Or paste a URL" placeholder="https://drive.google.com/…" value={form.file_url} onChange={e=>setForm(f=>({...f,file_url:e.target.value}))}/>
+      <Field label="Tags" placeholder="e.g. Branding, Strategy, Week 1" value={form.tags} onChange={e=>setForm(f=>({...f,tags:e.target.value}))} helper="Comma-separated"/>
+      <Btn onClick={share} loading={saving||uploading} style={{width:"100%"}}>{uploading?"Uploading…":"Share Resource"}</Btn>
+    </Modal>}
+    {commentModal&&<ResourceComments resource={commentModal} profile={profile} onClose={()=>{setCommentModal(null);load()}}/>}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:20}}>
+      <div><h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em"}}>Resources</h1><p style={{fontSize:13,color:C.muted,marginTop:3}}>{isMentor?"Share files and links":"Files shared by your mentor"}</p></div>
+      {isMentor&&<Btn onClick={()=>setModal(true)}>+ Share Resource</Btn>}
+    </div>
+    <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search resources…" style={{width:"100%",padding:"10px 14px",borderRadius:10,border:`1.5px solid ${C.border}`,fontSize:13,background:"#fff",outline:"none",color:C.text,marginBottom:18}}/>
+    {loading?<div style={{padding:40,textAlign:"center"}}><Spinner/></div>:
+    filtered.length===0?<Empty icon="📂" title="No resources yet" action={isMentor?<Btn onClick={()=>setModal(true)}>Share First Resource</Btn>:null}/>:
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {filtered.map(r=><div key={r.id} style={{background:"#fff",borderRadius:12,padding:"14px 18px",border:`1px solid ${C.border}`,boxShadow:C.shadow,display:"flex",alignItems:"center",gap:14}}>
+        <div style={{width:42,height:42,borderRadius:9,background:C.p50,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{icons[r.file_type]||"📁"}</div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13.5,fontWeight:700,color:C.text}}>{r.title}</div>
+          {r.description&&<div style={{fontSize:12,color:C.muted,marginTop:2}}>{r.description}</div>}
+          <div style={{display:"flex",gap:8,alignItems:"center",marginTop:5,flexWrap:"wrap"}}>
+            <span style={{fontSize:11,color:C.light}}>{r.uploader?.full_name} · {timeAgo(r.created_at)}{r.file_size?` · ${r.file_size}`:""}</span>
+            {(r.tags||[]).map(t=><Badge key={t} label={t} bg={C.p50} color={C.p600}/>)}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:8,flexShrink:0}}>
+          <button onClick={()=>setCommentModal(r)} style={{padding:"6px 11px",borderRadius:7,border:`1px solid ${C.border}`,background:"transparent",color:C.muted,fontSize:12,fontWeight:600,cursor:"pointer"}}>💬 {r.comments?.length||0}</button>
+          {r.file_url&&<Btn size="sm" variant="outline" onClick={()=>download(r)}>↓</Btn>}
+        </div>
+      </div>)}
+    </div>}
+  </div>;
+};
+
+const ResourceComments=({resource,profile,onClose})=>{
+  const [comments,setComments]=useState([]);
+  const [input,setInput]=useState("");
+  const [saving,setSaving]=useState(false);
+  useEffect(()=>{db.from("resource_comments").select("*,author:profiles!resource_comments_author_id_fkey(id,full_name,avatar_url)").eq("resource_id",resource.id).order("created_at",{ascending:true}).then(({data})=>setComments(data||[]))},[]);
+  const post=async()=>{
+    if(!input.trim())return;setSaving(true);
+    await db.from("resource_comments").insert({resource_id:resource.id,author_id:profile.id,content:input.trim()});
+    const{data}=await db.from("resource_comments").select("*,author:profiles!resource_comments_author_id_fkey(id,full_name,avatar_url)").eq("resource_id",resource.id).order("created_at",{ascending:true});
+    setComments(data||[]);setInput("");setSaving(false);
+  };
+  return <Modal open onClose={onClose} title={resource.title}>
+    <div style={{maxHeight:280,overflowY:"auto",marginBottom:14}}>
+      {comments.length===0?<p style={{fontSize:13,color:C.muted,textAlign:"center",padding:"20px 0"}}>No comments yet.</p>:
+      comments.map(c=><div key={c.id} style={{display:"flex",gap:10,marginBottom:12}}>
+        <Avatar name={c.author?.full_name||"?"} size={30} url={c.author?.avatar_url}/>
+        <div><div style={{fontSize:12.5,fontWeight:700,color:C.text}}>{c.author?.full_name} <span style={{fontWeight:400,color:C.light,fontSize:11}}>{timeAgo(c.created_at)}</span></div>
+        <div style={{fontSize:13,color:C.text,marginTop:3,background:C.n50,padding:"8px 10px",borderRadius:8,lineHeight:1.5}}>{c.content}</div></div>
+      </div>)}
+    </div>
+    <div style={{display:"flex",gap:9,borderTop:`1px solid ${C.border}`,paddingTop:14}}>
+      <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&post()} placeholder="Add a comment…" style={{flex:1,padding:"9px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",color:C.text}}/>
+      <Btn size="sm" onClick={post} loading={saving}>Post</Btn>
+    </div>
+  </Modal>;
+};
+
+/* ─────────────────────────────────────────────
+   PROFILE
+───────────────────────────────────────────── */
+const BANNERS=["linear-gradient(135deg,#0d4f2e,#1a8a52)","linear-gradient(135deg,#1e3a5f,#2563eb)","linear-gradient(135deg,#3b1f6e,#7c3aed)","linear-gradient(135deg,#7c2d12,#ea580c)","linear-gradient(135deg,#164e63,#0891b2)","linear-gradient(135deg,#1c1c1c,#374151)"];
+
+const UserProfile=({profile,onUpdate})=>{
+  const [editing,setEditing]=useState(false);
+  const [form,setForm]=useState({full_name:profile?.full_name||"",title:profile?.title||"",bio:profile?.bio||""});
+  const [saving,setSaving]=useState(false);
+  const [banner,setBanner]=useState(0);
+  const [showBanners,setShowBanners]=useState(false);
+  const [avatarLoading,setAvatarLoading]=useState(false);
+  const [pairs,setPairs]=useState([]);
+  const [Toast,showToast]=useToast();
+
+  useEffect(()=>{
+    const col=profile.role==="mentor"?"mentor_id":"mentee_id";
+    const oCol=profile.role==="mentor"?"mentee_id":"mentor_id";
+    db.from("pairings").select(`other:profiles!pairings_${oCol}_fkey(id,full_name,avatar_url,title,role)`).eq(col,profile.id).then(({data})=>setPairs(data?.map(p=>p.other)||[]));
+  },[]);
+
+  const save=async()=>{
+    setSaving(true);
+    const{error}=await db.from("profiles").update({full_name:form.full_name,title:form.title,bio:form.bio}).eq("id",profile.id);
+    setSaving(false);
+    if(error){showToast(error.message,"error");return}
+    onUpdate({...profile,...form});setEditing(false);showToast("Profile updated!");
+  };
+  const uploadAvatar=async file=>{
+    setAvatarLoading(true);
+    try{
+      const path=`avatars/${profile.id}/${Date.now()}_${file.name}`;
+      const url=await uploadFile(file,path);
+      await db.from("profiles").update({avatar_url:url}).eq("id",profile.id);
+      onUpdate({...profile,avatar_url:url});showToast("Photo updated!");
+    }catch(e){showToast("Upload failed","error")}
+    setAvatarLoading(false);
+  };
+
+  return <div style={{padding:"28px 32px",maxWidth:760}} className="anim">
+    <Toast/>
+    <div style={{background:"#fff",borderRadius:18,border:`1px solid ${C.border}`,boxShadow:C.shadowM,overflow:"hidden",marginBottom:20}}>
+      {/* Banner */}
+      <div style={{height:88,background:BANNERS[banner],position:"relative"}}>
+        <button onClick={()=>setShowBanners(!showBanners)} style={{position:"absolute",top:10,right:12,padding:"5px 12px",borderRadius:7,background:"rgba(0,0,0,.3)",border:"1px solid rgba(255,255,255,.2)",color:"#fff",fontSize:11,fontWeight:600,cursor:"pointer",backdropFilter:"blur(4px)"}}>🎨 Banner</button>
+        {showBanners&&<div style={{position:"absolute",top:38,right:12,background:"#fff",borderRadius:11,padding:"12px",boxShadow:C.shadowM,border:`1px solid ${C.border}`,zIndex:10}}>
+          <div style={{display:"flex",gap:7}}>
+            {BANNERS.map((b,i)=><button key={i} onClick={()=>{setBanner(i);setShowBanners(false)}} style={{width:32,height:32,borderRadius:7,background:b,border:banner===i?`2.5px solid ${C.p600}`:"2.5px solid transparent",cursor:"pointer"}}/>)}
+          </div>
+        </div>}
+      </div>
+      {/* Content */}
+      <div style={{padding:"12px 24px 24px"}}>
+        <div style={{display:"flex",gap:14,alignItems:"flex-start",marginTop:-28,marginBottom:14}}>
+          <div style={{position:"relative",flexShrink:0}}>
+            <Avatar name={profile.full_name||"?"} size={68} url={profile.avatar_url} style={{border:"3px solid #fff",boxShadow:"0 2px 8px rgba(0,0,0,.12)"}}/>
+            <label style={{position:"absolute",bottom:2,right:2,width:20,height:20,borderRadius:"50%",background:C.p600,border:"2px solid #fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              {avatarLoading?<Spinner s={10} c="#fff"/>:<span style={{color:"#fff",fontSize:11,fontWeight:700}}>✏</span>}
+              <input type="file" accept="image/*" onChange={e=>e.target.files[0]&&uploadAvatar(e.target.files[0])} style={{display:"none"}}/>
+            </label>
+          </div>
+          <div style={{paddingTop:30}}>
+            <div style={{fontSize:18,fontWeight:800,color:C.text}}>{profile.full_name}</div>
+            <div style={{fontSize:13,color:C.muted,marginTop:2}}>{profile.title||"No title set"} · <span style={{textTransform:"capitalize"}}>{profile.role}</span></div>
+          </div>
+        </div>
+        {!editing?<>
+          <p style={{fontSize:13.5,color:C.muted,lineHeight:1.7,marginBottom:14,maxWidth:540}}>{profile.bio||"No bio yet. Add one below."}</p>
+          <Btn variant="outline" size="sm" onClick={()=>setEditing(true)}>✏ Edit Profile</Btn>
+        </>:<div style={{maxWidth:480}}>
+          <Field label="Full name" value={form.full_name} onChange={e=>setForm(f=>({...f,full_name:e.target.value}))}/>
+          <Field label="Title / Role" placeholder="e.g. Digital Marketing Strategist" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/>
+          <Field label="Bio" placeholder="Tell people about yourself…" value={form.bio} onChange={e=>setForm(f=>({...f,bio:e.target.value}))} rows={3}/>
+          <div style={{display:"flex",gap:10}}>
+            <Btn onClick={save} loading={saving}>Save</Btn>
+            <Btn variant="outline" onClick={()=>setEditing(false)}>Cancel</Btn>
+          </div>
+        </div>}
+      </div>
+    </div>
+    {pairs.length>0&&<div style={{background:"#fff",borderRadius:16,border:`1px solid ${C.border}`,boxShadow:C.shadow,padding:"20px 22px"}}>
+      <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:16}}>{profile.role==="mentor"?"My Mentees":"My Mentor"}</div>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {pairs.map(p=><div key={p.id} style={{display:"flex",alignItems:"center",gap:12}}>
+          <Avatar name={p.full_name} size={42} url={p.avatar_url}/>
+          <div><div style={{fontSize:13.5,fontWeight:700,color:C.text}}>{p.full_name}</div><div style={{fontSize:12,color:C.muted,marginTop:1}}>{p.title||p.role}</div></div>
+        </div>)}
+      </div>
+    </div>}
+  </div>;
+};
+
+/* ─────────────────────────────────────────────
+   ORG DASHBOARD
+───────────────────────────────────────────── */
+const OrgDashboard=({profile,org,setOrg,onSignOut})=>{
+  const [tab,setTab]=useState("overview");
+  const [members,setMembers]=useState([]);
+  const [pairings,setPairings]=useState([]);
+  const [announcements,setAnnouncements]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [Toast,showToast]=useToast();
+  const [pairModal,setPairModal]=useState(false);
+  const [annModal,setAnnModal]=useState(false);
+  const [adminModal,setAdminModal]=useState(false);
+  const [editModal,setEditModal]=useState(false);
+  const [logoLoading,setLogoLoading]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [copied,setCopied]=useState(false);
+  const [pairForm,setPairForm]=useState({mentor_id:"",mentee_id:""});
+  const [annForm,setAnnForm]=useState({title:"",content:""});
+  const [editForm,setEditForm]=useState({name:org?.name||"",industry:org?.industry||"",country:org?.country||"",website:org?.website||"",about:org?.about||""});
+  const [banner,setBanner]=useState(0);
+
+  useEffect(()=>{if(org?.id)loadData()},[org]);
+  const loadData=async()=>{
+    setLoading(true);
+    const[m,p,a]=await Promise.all([
+      db.from("profiles").select("*").eq("org_id",org.id),
+      db.from("pairings").select("*,mentor:profiles!pairings_mentor_id_fkey(id,full_name,avatar_url),mentee:profiles!pairings_mentee_id_fkey(id,full_name,avatar_url)").eq("org_id",org.id),
+      db.from("announcements").select("*,author:profiles!announcements_author_id_fkey(id,full_name)").eq("org_id",org.id).order("created_at",{ascending:false}),
+    ]);
+    setMembers(m.data||[]);setPairings(p.data||[]);setAnnouncements(a.data||[]);setLoading(false);
+  };
+
+  const mentors=members.filter(m=>m.role==="mentor");
+  const mentees=members.filter(m=>m.role==="mentee");
+  const pairedMenteeIds=new Set(pairings.map(p=>p.mentee_id));
+  const unpaired=mentees.filter(m=>!pairedMenteeIds.has(m.id));
+
+  const createPairing=async()=>{
+    if(!pairForm.mentor_id||!pairForm.mentee_id){showToast("Select both","error");return}
+    setSaving(true);
+    const{error}=await db.from("pairings").insert({mentor_id:pairForm.mentor_id,mentee_id:pairForm.mentee_id,org_id:org.id});
+    setSaving(false);
+    if(error){showToast(error.message,"error");return}
+    await pushNotif(pairForm.mentee_id,"Mentor Assigned","You've been paired with a mentor!","info");
+    await pushNotif(pairForm.mentor_id,"New Mentee Assigned","A new mentee has been added to your list.","info");
+    showToast("Pairing created!");setPairModal(false);setPairForm({mentor_id:"",mentee_id:""});loadData();
+  };
+  const removePairing=async id=>{await db.from("pairings").delete().eq("id",id);showToast("Removed","warn");loadData()};
+  const postAnn=async()=>{
+    if(!annForm.title||!annForm.content){showToast("Fill all fields","error");return}
+    setSaving(true);
+    await db.from("announcements").insert({title:annForm.title,content:annForm.content,author_id:profile.id,org_id:org.id});
+    for(const m of members)await pushNotif(m.id,"📢 "+annForm.title,annForm.content,"announcement");
+    setSaving(false);showToast("Posted!");setAnnModal(false);setAnnForm({title:"",content:""});loadData();
+  };
+  const saveEdit=async()=>{
+    setSaving(true);
+    const{data,error}=await db.from("organisations").update(editForm).eq("id",org.id).select().single();
+    setSaving(false);
+    if(error){showToast(error.message,"error");return}
+    setOrg(data);showToast("Saved!");setEditModal(false);
+  };
+  const uploadLogo=async file=>{
+    setLogoLoading(true);
+    try{
+      const path=`logos/${org.id}/${Date.now()}_${file.name}`;
+      const url=await uploadFile(file,path);
+      const{data}=await db.from("organisations").update({logo_url:url}).eq("id",org.id).select().single();
+      setOrg(data);showToast("Logo updated!");
+    }catch(e){showToast("Upload failed","error")}
+    setLogoLoading(false);
+  };
+  const makeAdmin=async userId=>{
+    await db.from("profiles").update({role:"org_admin"}).eq("id",userId);
+    await db.from("org_admins").insert({org_id:org.id,user_id:userId});
+    await pushNotif(userId,"Admin Access","You've been made an admin of "+org.name,"info");
+    showToast("Admin added!");setAdminModal(false);loadData();
+  };
+
+  const ORG_TABS=[{id:"overview",l:"Overview"},{id:"members",l:"Members"},{id:"pairings",l:"Pairings"},{id:"announcements",l:"Announcements"},{id:"settings",l:"Settings"}];
+
+  return <div style={{display:"flex",height:"100vh",background:C.bg,overflow:"hidden"}}>
+    <Toast/>
+    <aside style={{width:220,flexShrink:0,background:C.p900,display:"flex",flexDirection:"column"}}>
+      <div style={{padding:"18px 16px 14px",display:"flex",alignItems:"center",gap:10}}>
+        {org?.logo_url?<img src={org.logo_url} style={{width:32,height:32,borderRadius:7,objectFit:"cover",flexShrink:0}}/>:<div style={{width:32,height:32,borderRadius:7,background:C.p500,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}}>🏢</div>}
+        <div style={{minWidth:0}}><div style={{fontSize:13,fontWeight:800,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{org?.name}</div><div style={{fontSize:10,color:"rgba(255,255,255,.4)"}}>Org Admin</div></div>
+      </div>
+      <nav style={{flex:1,padding:"4px 8px",display:"flex",flexDirection:"column",gap:2}}>
+        {ORG_TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{padding:"9px 12px",borderRadius:8,border:"none",background:tab===t.id?"rgba(255,255,255,.12)":"transparent",color:tab===t.id?"#fff":"rgba(255,255,255,.5)",fontSize:13,fontWeight:tab===t.id?700:500,cursor:"pointer",textAlign:"left"}}>{t.l}</button>)}
+      </nav>
+      <div style={{padding:"12px 10px",borderTop:"1px solid rgba(255,255,255,.08)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"4px 6px",marginBottom:8}}>
+          <Avatar name={profile.full_name||"?"} size={26} url={profile.avatar_url}/>
+          <div style={{minWidth:0}}><div style={{fontSize:12,fontWeight:700,color:"#fff",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{profile.full_name}</div></div>
+        </div>
+        <button onClick={onSignOut} style={{width:"100%",padding:"7px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,.12)",background:"transparent",color:"rgba(255,255,255,.4)",fontSize:12,fontWeight:500,cursor:"pointer",textAlign:"left"}}>↪ Sign out</button>
+      </div>
+    </aside>
+    <div style={{flex:1,overflowY:"auto"}}>
+      {/* Modals */}
+      <Modal open={pairModal} onClose={()=>setPairModal(false)} title="Create a Pairing">
+        <Select label="Select Mentor" value={pairForm.mentor_id} onChange={e=>setPairForm(f=>({...f,mentor_id:e.target.value}))} options={[{value:"",label:"-- Select mentor --"},...mentors.map(m=>({value:m.id,label:m.full_name}))]}/>
+        <Select label="Select Mentee" value={pairForm.mentee_id} onChange={e=>setPairForm(f=>({...f,mentee_id:e.target.value}))} options={[{value:"",label:"-- Select mentee --"},...mentees.map(m=>({value:m.id,label:m.full_name}))]}/>
+        <Btn onClick={createPairing} loading={saving} style={{width:"100%"}}>Create Pairing</Btn>
+      </Modal>
+      <Modal open={annModal} onClose={()=>setAnnModal(false)} title="Post Announcement">
+        <Field label="Title" value={annForm.title} onChange={e=>setAnnForm(f=>({...f,title:e.target.value}))} required/>
+        <Field label="Message" value={annForm.content} onChange={e=>setAnnForm(f=>({...f,content:e.target.value}))} rows={4} required/>
+        <Btn onClick={postAnn} loading={saving} style={{width:"100%"}}>Post to All Members</Btn>
+      </Modal>
+      <Modal open={adminModal} onClose={()=>setAdminModal(false)} title="Add Org Admin">
+        <p style={{fontSize:13,color:C.muted,marginBottom:14}}>Choose a member to give admin access:</p>
+        {members.filter(m=>m.role!=="org_admin"&&m.id!==profile.id).map(m=><button key={m.id} onClick={()=>makeAdmin(m.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"11px",borderRadius:10,border:`1px solid ${C.border}`,background:"transparent",cursor:"pointer",width:"100%",marginBottom:8}}>
+          <Avatar name={m.full_name} size={34} url={m.avatar_url}/><div style={{flex:1,textAlign:"left"}}><div style={{fontSize:13,fontWeight:600,color:C.text}}>{m.full_name}</div><div style={{fontSize:11,color:C.muted,textTransform:"capitalize"}}>{m.role}</div></div>
+        </button>)}
+      </Modal>
+      <Modal open={editModal} onClose={()=>setEditModal(false)} title="Edit Organisation Profile">
+        <Field label="Name" value={editForm.name} onChange={e=>setEditForm(f=>({...f,name:e.target.value}))}/>
+        <Field label="Industry" placeholder="e.g. Education & Training" value={editForm.industry} onChange={e=>setEditForm(f=>({...f,industry:e.target.value}))}/>
+        <Field label="Country" value={editForm.country} onChange={e=>setEditForm(f=>({...f,country:e.target.value}))}/>
+        <Field label="Website" placeholder="https://…" value={editForm.website} onChange={e=>setEditForm(f=>({...f,website:e.target.value}))}/>
+        <Field label="About" value={editForm.about} onChange={e=>setEditForm(f=>({...f,about:e.target.value}))} rows={3}/>
+        <Btn onClick={saveEdit} loading={saving} style={{width:"100%"}}>Save</Btn>
+      </Modal>
+
+      {tab==="overview"&&<div style={{padding:"28px 32px",maxWidth:880}} className="anim">
+        <div style={{background:"#fff",borderRadius:18,border:`1px solid ${C.border}`,boxShadow:C.shadowM,overflow:"hidden",marginBottom:24}}>
+          <div style={{height:80,background:BANNERS[banner],position:"relative"}}>
+            <button onClick={()=>setBanner((banner+1)%BANNERS.length)} style={{position:"absolute",top:8,right:10,padding:"4px 11px",borderRadius:7,background:"rgba(0,0,0,.3)",border:"1px solid rgba(255,255,255,.2)",color:"#fff",fontSize:11,fontWeight:600,cursor:"pointer"}}>🎨</button>
+          </div>
+          <div style={{padding:"10px 22px 20px"}}>
+            <div style={{display:"flex",gap:14,alignItems:"flex-start",marginTop:-22,marginBottom:12}}>
+              <div style={{position:"relative",flexShrink:0}}>
+                {org?.logo_url?<img src={org.logo_url} style={{width:56,height:56,borderRadius:11,objectFit:"cover",border:"3px solid #fff"}}/>:<div style={{width:56,height:56,borderRadius:11,background:C.p600,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,border:"3px solid #fff"}}>🏢</div>}
+                <label style={{position:"absolute",bottom:0,right:0,width:19,height:19,borderRadius:"50%",background:C.p600,border:"2px solid #fff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  {logoLoading?<Spinner s={10} c="#fff"/>:<span style={{color:"#fff",fontSize:10}}>✏</span>}
+                  <input type="file" accept="image/*" onChange={e=>e.target.files[0]&&uploadLogo(e.target.files[0])} style={{display:"none"}}/>
+                </label>
+              </div>
+              <div style={{paddingTop:24}}>
+                <div style={{fontSize:18,fontWeight:800,color:C.text}}>{org?.name}</div>
+                <div style={{fontSize:12.5,color:C.muted,marginTop:2}}>{org?.industry||"No industry"}{org?.country?` · ${org.country}`:""}</div>
+              </div>
+            </div>
+            {org?.about&&<p style={{fontSize:13,color:C.muted,lineHeight:1.6,marginBottom:12}}>{org.about}</p>}
+            <Btn variant="outline" size="sm" onClick={()=>setEditModal(true)}>✏ Edit Profile</Btn>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:24}}>
+          {[{l:"Mentors",v:mentors.length},{l:"Mentees",v:mentees.length},{l:"Active Pairings",v:pairings.length},{l:"Unassigned",v:unpaired.length,warn:unpaired.length>0}].map((s,i)=>(
+            <div key={i} style={{background:"#fff",borderRadius:12,padding:"16px 18px",border:`1px solid ${s.warn?C.dangerB:C.border}`,boxShadow:C.shadow}}>
+              <div style={{fontSize:26,fontWeight:800,color:s.warn?C.danger:C.p600,letterSpacing:"-.04em"}}>{loading?"—":s.v}</div>
+              <div style={{fontSize:12,fontWeight:600,color:C.muted,marginTop:3}}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{background:C.p700,borderRadius:16,padding:"20px 28px",color:"#fff",display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:22,position:"relative",overflow:"hidden"}}>
+          <div style={{position:"absolute",right:-30,top:-30,width:160,height:160,borderRadius:"50%",background:"rgba(255,255,255,.05)"}}/>
+          <div><div style={{fontSize:11,letterSpacing:".08em",opacity:.6,marginBottom:8,fontWeight:700,textTransform:"uppercase"}}>Organisation Code</div>
+          <div style={{fontSize:34,fontWeight:800,letterSpacing:".16em",fontFamily:"monospace"}}>{org?.code||"—"}</div>
+          <div style={{fontSize:12,opacity:.65,marginTop:6}}>Share this code for members to join.</div></div>
+          <button onClick={()=>{navigator.clipboard.writeText(org?.code||"");setCopied(true);setTimeout(()=>setCopied(false),2e3)}} style={{padding:"11px 22px",borderRadius:10,border:"2px solid rgba(255,255,255,.3)",background:copied?"rgba(255,255,255,.15)":"transparent",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",flexShrink:0}}>{copied?"Copied ✓":"Copy Code"}</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+          {[{icon:"🤝",l:"Create Pairing",sub:"Match mentors & mentees",fn:()=>setPairModal(true)},{icon:"📢",l:"Post Announcement",sub:"Notify all members",fn:()=>setAnnModal(true)},{icon:"🛡️",l:"Add Admin",sub:"Grant admin access",fn:()=>setAdminModal(true)}].map(a=><button key={a.l} onClick={a.fn} style={{padding:"16px",borderRadius:12,border:`1px solid ${C.border}`,background:"#fff",cursor:"pointer",textAlign:"left",boxShadow:C.shadow}}>
+            <div style={{fontSize:20,marginBottom:7}}>{a.icon}</div>
+            <div style={{fontSize:13,fontWeight:700,color:C.text}}>{a.l}</div>
+            <div style={{fontSize:11.5,color:C.muted,marginTop:2}}>{a.sub}</div>
+          </button>)}
+        </div>
+      </div>}
+
+      {tab==="members"&&<div style={{padding:"28px 32px",maxWidth:760}} className="anim">
+        <h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em",marginBottom:22}}>Members</h1>
+        {loading?<Spinner/>:<>
+          {[{label:`Mentors (${mentors.length})`,list:mentors},{label:`Mentees (${mentees.length})`,list:mentees}].map(g=><div key={g.label} style={{marginBottom:26}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".06em",marginBottom:12}}>{g.label}</div>
+            {g.list.length===0?<p style={{fontSize:13,color:C.muted}}>None yet.</p>:
+            g.list.map(m=><div key={m.id} style={{background:"#fff",borderRadius:11,padding:"13px 16px",border:`1px solid ${C.border}`,boxShadow:C.shadow,display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
+              <Avatar name={m.full_name} size={38} url={m.avatar_url}/>
+              <div style={{flex:1}}><div style={{fontSize:13.5,fontWeight:700,color:C.text}}>{m.full_name}</div><div style={{fontSize:11.5,color:C.muted}}>{m.email}</div></div>
+              {pairedMenteeIds.has(m.id)&&m.role==="mentee"&&<Badge label="Paired" bg={C.p50} color={C.p600}/>}
+              {!pairedMenteeIds.has(m.id)&&m.role==="mentee"&&<Badge label="Unassigned" bg={C.dangerL} color={C.danger}/>}
+              {m.role==="org_admin"&&<Badge label="Admin" bg="#f5f3ff" color="#5b21b6"/>}
+            </div>)}
+          </div>)}
+        </>}
+      </div>}
+
+      {tab==="pairings"&&<div style={{padding:"28px 32px",maxWidth:760}} className="anim">
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
+          <h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em"}}>Pairings</h1>
+          <Btn onClick={()=>setPairModal(true)}>+ Create Pairing</Btn>
+        </div>
+        {loading?<Spinner/>:pairings.length===0?<Empty icon="🤝" title="No pairings yet" action={<Btn onClick={()=>setPairModal(true)}>Create First Pairing</Btn>}/>:
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {pairings.map(p=><div key={p.id} style={{background:"#fff",borderRadius:13,border:`1px solid ${C.border}`,boxShadow:C.shadow,padding:"16px 20px",display:"flex",alignItems:"center",gap:14}}>
+            <div style={{display:"flex",alignItems:"center",gap:9,flex:1}}><Avatar name={p.mentor?.full_name||"?"} size={38} url={p.mentor?.avatar_url}/><div><div style={{fontSize:13,fontWeight:700,color:C.text}}>{p.mentor?.full_name}</div><div style={{fontSize:11,color:C.muted}}>Mentor</div></div></div>
+            <span style={{color:C.n300,fontSize:18}}>→</span>
+            <div style={{display:"flex",alignItems:"center",gap:9,flex:1}}><Avatar name={p.mentee?.full_name||"?"} size={38} url={p.mentee?.avatar_url}/><div><div style={{fontSize:13,fontWeight:700,color:C.text}}>{p.mentee?.full_name}</div><div style={{fontSize:11,color:C.muted}}>Mentee</div></div></div>
+            <Btn size="sm" variant="danger" onClick={()=>removePairing(p.id)}>Remove</Btn>
+          </div>)}
+        </div>}
+        {unpaired.length>0&&<div style={{marginTop:22}}>
+          <div style={{fontSize:12,fontWeight:700,color:C.danger,marginBottom:10}}>⚠ Unassigned Mentees</div>
+          {unpaired.map(m=><div key={m.id} style={{background:"#fff",borderRadius:11,padding:"12px 16px",border:`1.5px dashed ${C.dangerB}`,display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
+            <Avatar name={m.full_name} size={36} url={m.avatar_url}/>
+            <div style={{flex:1,fontSize:13,fontWeight:600,color:C.text}}>{m.full_name}</div>
+            <Btn size="sm" onClick={()=>{setPairForm(f=>({...f,mentee_id:m.id}));setPairModal(true)}}>Assign</Btn>
+          </div>)}
+        </div>}
+      </div>}
+
+      {tab==="announcements"&&<div style={{padding:"28px 32px",maxWidth:720}} className="anim">
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
+          <h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em"}}>Announcements</h1>
+          <Btn onClick={()=>setAnnModal(true)}>+ Post</Btn>
+        </div>
+        {announcements.length===0?<Empty icon="📢" title="No announcements yet"/>:
+        announcements.map(a=><div key={a.id} style={{background:"#fff",borderRadius:13,border:`1px solid ${C.border}`,boxShadow:C.shadow,padding:"18px 20px",marginBottom:10}}>
+          <div style={{fontSize:14.5,fontWeight:700,color:C.text,marginBottom:6}}>{a.title}</div>
+          <p style={{fontSize:13,color:C.muted,lineHeight:1.6,marginBottom:8}}>{a.content}</p>
+          <div style={{fontSize:11,color:C.light}}>By {a.author?.full_name} · {timeAgo(a.created_at)}</div>
+        </div>)}
+      </div>}
+
+      {tab==="settings"&&<div style={{padding:"28px 32px",maxWidth:640}} className="anim">
+        <h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em",marginBottom:22}}>Settings</h1>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {[{icon:"🔑",l:"Organisation Code",sub:"Share with mentors & mentees to join.",action:<div style={{display:"flex",gap:10,alignItems:"center",marginTop:10}}><div style={{flex:1,padding:"10px 14px",borderRadius:9,border:`1px solid ${C.border}`,background:C.n50,fontFamily:"monospace",fontSize:18,fontWeight:800,letterSpacing:".12em",color:C.p600}}>{org?.code}</div><Btn onClick={()=>{navigator.clipboard.writeText(org?.code||"");showToast("Copied!")}}>Copy</Btn></div>},{icon:"✏",l:"Organisation Profile",sub:"Name, industry, website, about.",action:<Btn variant="outline" size="sm" onClick={()=>setEditModal(true)} style={{marginTop:10}}>Edit</Btn>},{icon:"🛡️",l:"Org Admins",sub:"Members with admin dashboard access.",action:<Btn variant="outline" size="sm" onClick={()=>setAdminModal(true)} style={{marginTop:10}}>Manage</Btn>}].map(s=><div key={s.l} style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,boxShadow:C.shadow,padding:"20px 22px"}}>
+            <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+              <span style={{fontSize:20}}>{s.icon}</span>
+              <div style={{flex:1}}><div style={{fontSize:13.5,fontWeight:700,color:C.text}}>{s.l}</div><div style={{fontSize:12.5,color:C.muted,marginTop:2}}>{s.sub}</div>{s.action}</div>
+            </div>
+          </div>)}
+        </div>
+      </div>}
+    </div>
+  </div>;
+};
+
+/* ─────────────────────────────────────────────
+   ADMIN PORTAL
+───────────────────────────────────────────── */
+const ADMIN_TABS=[{id:"overview",l:"Overview"},{id:"activity",l:"User Activity"},{id:"map",l:"User Map"},{id:"pending",l:"Pending",badge:true},{id:"orgs",l:"Organisations"},{id:"users",l:"All Users"}];
+
+const AdminPortal=({onBack})=>{
+  const [authed,setAuthed]=useState(sessionStorage.getItem("mm_admin")==="1");
+  const [email,setEmail]=useState("");
+  const [pass,setPass]=useState("");
+  const [loginErr,setLoginErr]=useState("");
+  const [loggingIn,setLoggingIn]=useState(false);
+  const [tab,setTab]=useState("overview");
+  const [orgs,setOrgs]=useState([]);
+  const [users,setUsers]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [Toast,showToast]=useToast();
+  const [confirmAction,setConfirmAction]=useState(null);
+
+  const doLogin=async()=>{
+    if(email.trim().toLowerCase()!==ADMIN_EMAIL.toLowerCase()||pass!==ADMIN_PASS){setLoginErr("Incorrect credentials.");return}
+    setLoggingIn(true);
+    const{error}=await db.auth.signInWithPassword({email:ADMIN_EMAIL,password:ADMIN_PASS});
+    setLoggingIn(false);
+    if(error){setLoginErr(error.message);return}
+    sessionStorage.setItem("mm_admin","1");setAuthed(true);
+  };
+  useEffect(()=>{if(authed)loadData()},[authed]);
+  const loadData=async()=>{
+    setLoading(true);
+    const[o,u]=await Promise.all([
+      db.from("organisations").select("*").order("created_at",{ascending:false}),
+      db.from("profiles").select("*").order("created_at",{ascending:false}),
+    ]);
+    setOrgs(o.data||[]);setUsers(u.data||[]);setLoading(false);
+  };
+  const approveOrg=async id=>{
+    await db.from("organisations").update({status:"active"}).eq("id",id);
+    const o=orgs.find(x=>x.id===id);
+    if(o?.owner_id)await pushNotif(o.owner_id,"✅ Organisation Approved",`${o.name} is now active on Mentor Me!`,"announcement");
+    showToast("Approved!");loadData();setConfirmAction(null);
+  };
+  const rejectOrg=async id=>{await db.from("organisations").update({status:"rejected"}).eq("id",id);showToast("Rejected","warn");loadData();setConfirmAction(null)};
+  const suspendOrg=async id=>{await db.from("organisations").update({status:"suspended"}).eq("id",id);showToast("Suspended","warn");loadData();setConfirmAction(null)};
+  const restoreOrg=async id=>{await db.from("organisations").update({status:"active"}).eq("id",id);showToast("Restored!");loadData();setConfirmAction(null)};
+  const toggleAdmin=async u=>{
+    await db.from("profiles").update({is_admin:!u.is_admin}).eq("id",u.id);
+    showToast(u.is_admin?"Admin removed":"Admin granted!");loadData();setConfirmAction(null);
+  };
+
+  if(!authed)return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#0d1a12",padding:24}}>
+    <div style={{width:"100%",maxWidth:380}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:32,justifyContent:"center"}}>
+        <div style={{width:42,height:42,borderRadius:11,background:C.p500,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>🌱</div>
+        <div><div style={{fontSize:18,fontWeight:800,color:"#fff"}}>Mentor Me</div><div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.35)",letterSpacing:".1em"}}>ADMIN PORTAL</div></div>
+      </div>
+      <div style={{background:"#fff",borderRadius:18,padding:"32px",boxShadow:C.shadowL}}>
+        <h2 style={{fontSize:18,fontWeight:800,color:C.text,marginBottom:6}}>Admin Sign In</h2>
+        <p style={{fontSize:13,color:C.muted,marginBottom:24}}>Super administrator access only.</p>
+        <Field label="Email" type="email" placeholder="mentormehq@gmail.com" value={email} onChange={e=>{setEmail(e.target.value);setLoginErr("")}} error={loginErr}/>
+        <Field label="Password" type="password" placeholder="••••••••" value={pass} onChange={e=>{setPass(e.target.value);setLoginErr("")}}/>
+        <Btn onClick={doLogin} loading={loggingIn} style={{width:"100%",marginTop:4}}>Sign In →</Btn>
+      </div>
+      <p style={{textAlign:"center",fontSize:13,color:"rgba(255,255,255,.3)",marginTop:20,cursor:"pointer"}} onClick={onBack}>← Back to Mentor Me</p>
+    </div>
+  </div>;
+
+  const pending=orgs.filter(o=>o.status==="pending");
+
+  return <div style={{display:"flex",height:"100vh",overflow:"hidden",background:C.bg}}>
+    <Toast/>
+    <ConfirmDialog open={!!confirmAction} title={confirmAction?.title} body={confirmAction?.body} confirmText={confirmAction?.confirm} danger={confirmAction?.danger} onConfirm={confirmAction?.fn} onCancel={()=>setConfirmAction(null)}/>
+    <aside style={{width:220,flexShrink:0,background:"#0d1a12",display:"flex",flexDirection:"column"}}>
+      <div style={{padding:"20px 16px 16px",display:"flex",alignItems:"center",gap:10}}>
+        <div style={{width:32,height:32,borderRadius:8,background:C.p500,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>🌱</div>
+        <div><div style={{fontSize:14,fontWeight:800,color:"#fff"}}>Mentor Me</div><div style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,.3)",letterSpacing:".08em"}}>ADMIN</div></div>
+      </div>
+      <nav style={{flex:1,padding:"4px 8px",display:"flex",flexDirection:"column",gap:2}}>
+        {ADMIN_TABS.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 12px",borderRadius:8,border:"none",background:tab===t.id?"rgba(255,255,255,.1)":"transparent",color:tab===t.id?"#fff":"rgba(255,255,255,.45)",fontSize:13,fontWeight:tab===t.id?700:500,cursor:"pointer",textAlign:"left"}}>
+          <span>{t.l}</span>
+          {t.badge&&pending.length>0&&<span style={{fontSize:10,fontWeight:700,padding:"1px 7px",borderRadius:99,background:"#ef4444",color:"#fff"}}>{pending.length}</span>}
+        </button>)}
+      </nav>
+      <div style={{padding:"12px 10px",borderTop:"1px solid rgba(255,255,255,.06)"}}>
+        <div style={{fontSize:11.5,color:"rgba(255,255,255,.3)",padding:"4px 8px",marginBottom:8"}}>mentormehq@gmail.com</div>
+        <button onClick={async()=>{sessionStorage.removeItem("mm_admin");await db.auth.signOut();setAuthed(false)}} style={{width:"100%",padding:"7px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,.08)",background:"transparent",color:"rgba(255,255,255,.35)",fontSize:12,cursor:"pointer",textAlign:"left"}}>↪ Sign out</button>
+      </div>
+    </aside>
+    <div style={{flex:1,overflowY:"auto"}}>
+      {tab==="overview"&&<AdminOverview orgs={orgs} users={users} loading={loading} onGoTab={setTab}/>}
+      {tab==="activity"&&<AdminActivity users={users} loading={loading}/>}
+      {tab==="map"&&<AdminMap users={users} loading={loading}/>}
+      {tab==="pending"&&<AdminPending orgs={pending} onApprove={id=>setConfirmAction({title:"Approve Organisation?",body:"They will be notified and can start using Mentor Me.",confirm:"Approve",fn:()=>approveOrg(id)})} onReject={id=>setConfirmAction({title:"Reject Organisation?",body:"This will notify the applicant their application was not approved.",confirm:"Reject",danger:true,fn:()=>rejectOrg(id)})}/>}
+      {tab==="orgs"&&<AdminOrgs orgs={orgs} onSuspend={id=>setConfirmAction({title:"Suspend Organisation?",body:"Members will not be able to access the platform.",confirm:"Suspend",danger:true,fn:()=>suspendOrg(id)})} onRestore={id=>setConfirmAction({title:"Restore Organisation?",body:"Members will regain access.",confirm:"Restore",fn:()=>restoreOrg(id)})}/>}
+      {tab==="users"&&<AdminUsers users={users} onToggleAdmin={u=>setConfirmAction({title:u.is_admin?`Remove admin from ${u.full_name}?`:`Make ${u.full_name} an admin?`,body:u.is_admin?"They will lose admin portal access.":"They will get full admin portal access.",confirm:u.is_admin?"Remove Admin":"Make Admin",danger:u.is_admin,fn:()=>toggleAdmin(u)})}/>}
+    </div>
+  </div>;
+};
+
+const AdminOverview=({orgs,users,loading,onGoTab})=>{
+  const pending=orgs.filter(o=>o.status==="pending");
+  const stats=[
+    {l:"Active Orgs",v:orgs.filter(o=>o.status==="active").length,icon:"🏢"},
+    {l:"Total Users",v:users.length,icon:"👥",accent:true},
+    {l:"Mentors",v:users.filter(u=>u.role==="mentor").length,icon:"🎓"},
+    {l:"Mentees",v:users.filter(u=>u.role==="mentee").length,icon:"📚"},
+  ];
+  return <div style={{padding:"28px 32px",maxWidth:880}} className="anim">
+    <h1 style={{fontSize:24,fontWeight:800,color:C.text,letterSpacing:"-.03em"}}>Platform Overview</h1>
+    <p style={{fontSize:13,color:C.muted,marginTop:4,marginBottom:24}}>Monitor and manage the Mentor Me platform</p>
+    {pending.length>0&&<div style={{background:"#fef9ee",border:`1.5px solid #fde68a`,borderRadius:12,padding:"14px 18px",marginBottom:22,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <div style={{display:"flex",gap:10,alignItems:"center"}}><span style={{fontSize:16}}>⏳</span><span style={{fontSize:13.5,fontWeight:600,color:"#92400e"}}>{pending.length} organisation{pending.length>1?"s":""} awaiting approval</span></div>
+      <button onClick={()=>onGoTab("pending")} style={{fontSize:12,fontWeight:700,color:"#92400e",background:"#fde68a",border:"none",borderRadius:99,padding:"4px 12px",cursor:"pointer"}}>Review →</button>
+    </div>}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:26}}>
+      {stats.map((s,i)=><div key={i} style={{background:"#fff",borderRadius:12,padding:"18px 20px",border:`1px solid ${C.border}`,boxShadow:C.shadow}}>
+        <div style={{fontSize:22}}>{s.icon}</div>
+        <div style={{fontSize:28,fontWeight:800,color:s.accent?C.p600:C.text,letterSpacing:"-.04em",marginTop:6}}>{loading?"—":s.v}</div>
+        <div style={{fontSize:12,fontWeight:600,color:C.muted,marginTop:3}}>{s.l}</div>
+      </div>)}
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
+      <div style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,boxShadow:C.shadow,padding:"20px 22px"}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:14}}>Org Status Breakdown</div>
+        {["active","pending","suspended","rejected"].map(s=>{const n=orgs.filter(o=>o.status===s).length;const cols={active:C.success,pending:C.warn,suspended:C.danger,dormant:C.muted};return<div key={s} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.n50}`}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:cols[s]||C.muted}}/><span style={{fontSize:13,color:C.text,textTransform:"capitalize"}}>{s}</span></div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            {n>0&&<div style={{width:Math.max(4,n/Math.max(1,orgs.length)*80),height:4,borderRadius:99,background:cols[s]||C.muted}}/>}
+            <span style={{fontSize:13,fontWeight:700,color:C.muted,minWidth:20,textAlign:"right"}}>{n}</span>
+          </div>
+        </div>;})}
+      </div>
+      <div style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,boxShadow:C.shadow,padding:"20px 22px"}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:14}}>Recent Applications</div>
+        {pending.slice(0,5).map(o=><div key={o.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:`1px solid ${C.n50}`}}>
+          <div><div style={{fontSize:13,fontWeight:600,color:C.text}}>{o.name}</div><div style={{fontSize:11,color:C.muted}}>{o.email}</div></div>
+          <Badge label="Pending" bg="#fef9ee" color={C.warn}/>
+        </div>)}
+        {pending.length===0&&<p style={{fontSize:13,color:C.muted,textAlign:"center",padding:"16px 0"}}>No pending applications</p>}
+      </div>
+    </div>
+  </div>;
+};
+
+const AdminActivity=({users,loading})=>{
+  const stats=useMemo(()=>{
+    const now=Date.now();
+    const online=users.filter(u=>{if(!u.last_seen)return false;return(now-new Date(u.last_seen))/60000<5}).length;
+    const today=users.filter(u=>{if(!u.last_seen)return false;const m=(now-new Date(u.last_seen))/60000;return m>=5&&m<1440}).length;
+    const inactive=users.filter(u=>{if(!u.last_seen)return false;const m=(now-new Date(u.last_seen))/60000;return m>=1440&&m<43200}).length;
+    const dormant=users.filter(u=>!u.last_seen||(now-new Date(u.last_seen))/60000>=43200).length;
+    const genders={Male:0,Female:0,"Prefer not to say":0,Unknown:0};
+    users.forEach(u=>{const g=u.gender||"Unknown";genders[g]=(genders[g]||0)+1});
+    const countries={};users.forEach(u=>{if(u.country){countries[u.country]=(countries[u.country]||0)+1}});
+    const topCountries=Object.entries(countries).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    const cities={};users.forEach(u=>{if(u.city){cities[u.city]=(cities[u.city]||0)+1}});
+    const topCities=Object.entries(cities).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    return{online,today,inactive,dormant,genders,topCountries,topCities};
+  },[users]);
+
+  const actStats=[{l:"Online Now",v:stats.online,c:C.online,sub:"Last seen < 5 min",icon:"🟢"},{l:"Active Today",v:stats.today,c:C.today,sub:"Last 24 hours",icon:"🔵"},{l:"Active This Month",v:stats.inactive,c:C.inactive,sub:"Last 30 days",icon:"🟡"},{l:"Dormant",v:stats.dormant,c:C.dormant,sub:"Over 30 days",icon:"⚫"}];
+  const gList=Object.entries(stats.genders).filter(([,n])=>n>0);
+  const total=Math.max(1,users.length);
+
+  return <div style={{padding:"28px 32px",maxWidth:900}} className="anim">
+    <h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em"}}>User Activity</h1>
+    <p style={{fontSize:13,color:C.muted,marginTop:4,marginBottom:24}}>Based on last_seen timestamps</p>
+    {loading?<Spinner/>:<>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14,marginBottom:26}}>
+        {actStats.map(s=><div key={s.l} style={{background:"#fff",borderRadius:13,padding:"18px 20px",border:`1px solid ${C.border}`,boxShadow:C.shadow}}>
+          <div style={{fontSize:20}}>{s.icon}</div>
+          <div style={{fontSize:30,fontWeight:800,color:s.c,letterSpacing:"-.05em",marginTop:6}}>{s.v}</div>
+          <div style={{fontSize:12.5,fontWeight:600,color:C.text,marginTop:4}}>{s.l}</div>
+          <div style={{fontSize:11,color:C.muted,marginTop:2}}>{s.sub}</div>
+        </div>)}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:18,marginBottom:22}}>
+        {/* Gender */}
+        <div style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,boxShadow:C.shadow,padding:"20px 22px"}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:14}}>Gender Breakdown</div>
+          {gList.map(([g,n])=><div key={g} style={{marginBottom:12}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:12.5,color:C.text}}>{g}</span><span style={{fontSize:12,fontWeight:700,color:C.muted}}>{n} ({Math.round(n/total*100)}%)</span></div>
+            <ProgressBar value={n/total*100} color={g==="Male"?C.today:g==="Female"?C.p500:C.muted}/>
+          </div>)}
+          {gList.length===0&&<p style={{fontSize:13,color:C.muted}}>No data yet</p>}
+        </div>
+        {/* Countries */}
+        <div style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,boxShadow:C.shadow,padding:"20px 22px"}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:14}}>Top Countries</div>
+          {stats.topCountries.length===0?<p style={{fontSize:13,color:C.muted}}>No data yet</p>:
+          stats.topCountries.map(([country,n])=><div key={country} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.n50}`}}>
+            <span style={{fontSize:13,color:C.text}}>{country}</span>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{width:Math.max(4,n/total*60),height:4,borderRadius:99,background:C.p400}}/>
+              <span style={{fontSize:12,fontWeight:700,color:C.muted}}>{n}</span>
+            </div>
+          </div>)}
+        </div>
+        {/* Cities */}
+        <div style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,boxShadow:C.shadow,padding:"20px 22px"}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:14}}>Top Cities</div>
+          {stats.topCities.length===0?<p style={{fontSize:13,color:C.muted}}>No data yet</p>:
+          stats.topCities.map(([city,n])=><div key={city} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:`1px solid ${C.n50}`}}>
+            <span style={{fontSize:13,color:C.text}}>{city}</span>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{width:Math.max(4,n/total*60),height:4,borderRadius:99,background:C.p300}}/>
+              <span style={{fontSize:12,fontWeight:700,color:C.muted}}>{n}</span>
+            </div>
+          </div>)}
+        </div>
+      </div>
+      {/* Per-user activity table */}
+      <div style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,boxShadow:C.shadow,overflow:"hidden"}}>
+        <div style={{padding:"14px 20px",borderBottom:`1px solid ${C.border}`,fontSize:13,fontWeight:700,color:C.text}}>User Activity Detail</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr style={{background:C.n50}}>
+              {["User","Role","Gender","Country","City","Last Seen","Status"].map(h=><th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:700,color:C.muted,textAlign:"left",textTransform:"uppercase",letterSpacing:".05em",whiteSpace:"nowrap"}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {users.map((u,i)=>{
+                const st=activityStatus(u.last_seen);
+                return <tr key={u.id} style={{borderBottom:`1px solid ${C.n50}`,background:i%2===0?"#fff":C.n50+"40"}}>
+                  <td style={{padding:"10px 16px"}}><div style={{display:"flex",alignItems:"center",gap:9}}><Avatar name={u.full_name||"?"} size={28} url={u.avatar_url}/><span style={{fontSize:13,fontWeight:600,color:C.text}}>{u.full_name||"—"}</span></div></td>
+                  <td style={{padding:"10px 16px"}}><Badge label={u.role||"—"}/></td>
+                  <td style={{padding:"10px 16px",fontSize:13,color:C.muted}}>{u.gender||"—"}</td>
+                  <td style={{padding:"10px 16px",fontSize:13,color:C.muted}}>{u.country||"—"}</td>
+                  <td style={{padding:"10px 16px",fontSize:13,color:C.muted}}>{u.city||"—"}</td>
+                  <td style={{padding:"10px 16px",fontSize:12,color:C.muted,whiteSpace:"nowrap"}}>{timeAgo(u.last_seen)}</td>
+                  <td style={{padding:"10px 16px"}}><div style={{display:"flex",alignItems:"center",gap:6}}><div style={{width:7,height:7,borderRadius:"50%",background:activityColor(st)}}/><span style={{fontSize:12,color:activityColor(st),fontWeight:600}}>{activityLabel(st)}</span></div></td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </>}
+  </div>;
+};
+
+const AdminMap=({users,loading})=>{
+  const mapRef=useRef();
+  const mapInstance=useRef(null);
+  useEffect(()=>{
+    if(loading||!mapRef.current)return;
+    if(mapInstance.current){mapInstance.current.remove();mapInstance.current=null}
+    const cityData={};
+    users.forEach(u=>{
+      if(!u.city&&!u.country)return;
+      const key=u.city||u.country;
+      if(!cityData[key]){cityData[key]={name:key,count:0,status:{online:0,today:0,inactive:0,dormant:0},country:u.country||"",city:u.city||""}}
+      cityData[key].count++;
+      const st=activityStatus(u.last_seen);
+      cityData[key].status[st]=(cityData[key].status[st]||0)+1;
+    });
+    const COORDS={"Accra":[5.6037,−0.187],"Kumasi":[6.6885,-1.6244],"Tamale":[9.4075,-0.8533],"Cape Coast":[5.1315,-1.2795],"Tema":[5.6698,-0.0166],"Ghana":[7.9465,-1.0232],"Nigeria":[9.082,8.6753],"Lagos":[6.5244,3.3792],"Abuja":[9.0765,7.3986],"Kenya":[0.0236,37.9062],"Nairobi":[-1.2921,36.8219],"South Africa":[-30.5595,22.9375],"Johannesburg":[-26.2041,28.0473],"Rwanda":[-1.9403,29.8739],"Kigali":[-1.9441,30.0619],"Tanzania":[-6.369,34.8888],"Uganda":[1.3733,32.2903],"Kampala":[0.3476,32.5825],"United Kingdom":[55.3781,-3.4360],"London":[51.5074,-0.1278],"United States":[37.0902,-95.7129],"New York":[40.7128,-74.0060],"Canada":[56.1304,-106.3468]};
+    const map=window.L.map(mapRef.current,{center:[5.6,0],zoom:3,zoomControl:true});
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(map);
+    Object.values(cityData).forEach(city=>{
+      const coords=COORDS[city.city]||COORDS[city.country]||COORDS[city.name];
+      if(!coords)return;
+      const dom=city.status.online>0?C.online:city.status.today>0?C.today:city.status.inactive>0?C.inactive:C.dormant;
+      window.L.circleMarker(coords,{radius:Math.min(24,8+city.count*2),fillColor:dom,color:"#fff",weight:2,opacity:1,fillOpacity:.75}).addTo(map).bindPopup(`<strong>${city.name}</strong><br>Total: ${city.count}<br><span style="color:${C.online}">●</span> Online: ${city.status.online||0}<br><span style="color:${C.today}">●</span> Today: ${city.status.today||0}`);
+    });
+    mapInstance.current=map;
+    return()=>{if(mapInstance.current){mapInstance.current.remove();mapInstance.current=null}};
+  },[users,loading]);
+
+  const withLoc=users.filter(u=>u.city||u.country).length;
+  return <div style={{padding:"28px 32px",maxWidth:960}} className="anim">
+    <h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em"}}>User Map</h1>
+    <p style={{fontSize:13,color:C.muted,marginTop:4,marginBottom:18}}>{withLoc} of {users.length} users have location data</p>
+    <div style={{display:"flex",gap:16,marginBottom:18,flexWrap:"wrap"}}>
+      {[{c:C.online,l:"Online now (< 5 min)"},{c:C.today,l:"Active today"},{c:C.inactive,l:"Active this month"},{c:C.dormant,l:"Dormant"}].map(s=><div key={s.l} style={{display:"flex",alignItems:"center",gap:6,fontSize:12,color:C.muted}}>
+        <div style={{width:10,height:10,borderRadius:"50%",background:s.c}}/>{s.l}
+      </div>)}
+    </div>
+    <div ref={mapRef} style={{height:480,borderRadius:14,border:`1px solid ${C.border}`,overflow:"hidden",background:C.n50}}/>
+    {withLoc===0&&<div style={{position:"relative",marginTop:-480,height:480,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,pointerEvents:"none"}}>
+      <span style={{fontSize:36}}>🗺️</span>
+      <div style={{fontSize:15,fontWeight:700,color:C.muted}}>No location data yet</div>
+      <div style={{fontSize:13,color:C.light}}>Users with country/city set will appear here</div>
+    </div>}
+  </div>;
+};
+
+const AdminPending=({orgs,onApprove,onReject})=>(
+  <div style={{padding:"28px 32px",maxWidth:820}} className="anim">
+    <h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em"}}>Pending Approvals</h1>
+    <p style={{fontSize:13,color:C.muted,marginTop:4,marginBottom:24}}>{orgs.length} application{orgs.length!==1?"s":""} waiting</p>
+    {orgs.length===0?<Empty icon="🎉" title="All caught up!" body="No pending applications."/>:
+    orgs.map(o=><div key={o.id} style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,boxShadow:C.shadow,padding:"20px 22px",marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",gap:16,alignItems:"flex-start"}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15,fontWeight:800,color:C.text,marginBottom:5}}>{o.name}</div>
+          <div style={{fontSize:12.5,color:C.muted,marginBottom:3}}>{o.email}{o.industry?` · ${o.industry}`:""}{o.country?` · ${o.country}`:""}</div>
+          <div style={{fontSize:11.5,color:C.light}}>Applied {timeAgo(o.created_at)}</div>
+          {o.about&&<p style={{fontSize:13,color:C.muted,marginTop:8,lineHeight:1.6,maxWidth:480}}>{o.about}</p>}
+        </div>
+        <div style={{display:"flex",gap:9,flexShrink:0}}>
+          <Btn variant="danger" size="sm" onClick={()=>onReject(o.id)}>Reject</Btn>
+          <Btn variant="success" size="sm" onClick={()=>onApprove(o.id)}>Approve ✓</Btn>
+        </div>
+      </div>
+    </div>)}
+  </div>
+);
+
+const AdminOrgs=({orgs,onSuspend,onRestore})=>{
+  const [filter,setFilter]=useState("all");
+  const [search,setSearch]=useState("");
+  const filtered=orgs.filter(o=>(filter==="all"||o.status===filter)&&o.name.toLowerCase().includes(search.toLowerCase()));
+  const statusColors={active:{bg:C.successL,c:C.success},pending:{bg:"#fef9ee",c:C.warn},suspended:{bg:C.dangerL,c:C.danger},rejected:{bg:C.n50,c:C.muted}};
+  return <div style={{padding:"28px 32px",maxWidth:860}} className="anim">
+    <h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em",marginBottom:20}}>Organisations</h1>
+    <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…" style={{flex:1,minWidth:200,padding:"9px 13px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",color:C.text}}/>
+      <div style={{display:"flex",gap:3,background:C.n50,borderRadius:9,padding:3}}>
+        {["all","active","pending","suspended"].map(f=><button key={f} onClick={()=>setFilter(f)} style={{padding:"7px 14px",borderRadius:7,border:"none",fontSize:12.5,fontWeight:600,background:filter===f?C.p600:"transparent",color:filter===f?"#fff":C.muted,cursor:"pointer"}}>{f.charAt(0).toUpperCase()+f.slice(1)}</button>)}
+      </div>
+    </div>
+    {filtered.map(o=>{const sc=statusColors[o.status]||statusColors.rejected;return(
+      <div key={o.id} style={{background:"#fff",borderRadius:13,border:`1px solid ${C.border}`,boxShadow:C.shadow,padding:"16px 20px",marginBottom:10,display:"flex",alignItems:"center",gap:14}}>
+        <div style={{width:40,height:40,borderRadius:9,background:C.p50,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:C.p600,flexShrink:0}}>{o.name.charAt(0)}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{fontSize:14,fontWeight:700,color:C.text}}>{o.name}</span>
+            <Badge label={o.status} bg={sc.bg} color={sc.c}/>
+            {o.industry&&<Badge label={o.industry}/>}
+          </div>
+          <div style={{fontSize:12,color:C.muted,marginTop:3}}>Code: <span style={{fontFamily:"monospace",fontWeight:700,color:C.p600}}>{o.code}</span> · {o.email}</div>
+        </div>
+        {o.status==="active"&&<Btn size="sm" variant="danger" onClick={()=>onSuspend(o.id)}>Suspend</Btn>}
+        {o.status==="suspended"&&<Btn size="sm" variant="success" onClick={()=>onRestore(o.id)}>Restore</Btn>}
+      </div>
+    );})}
+    {filtered.length===0&&<Empty title="No organisations found" body="Try a different filter."/>}
+  </div>;
+};
+
+const AdminUsers=({users,onToggleAdmin})=>{
+  const [search,setSearch]=useState("");
+  const [filter,setFilter]=useState("all");
+  const filtered=users.filter(u=>(filter==="all"||u.role===filter)&&((u.full_name||"").toLowerCase().includes(search.toLowerCase())||(u.email||"").toLowerCase().includes(search.toLowerCase())));
+  return <div style={{padding:"28px 32px",maxWidth:920}} className="anim">
+    <h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em",marginBottom:20}}>All Users <span style={{fontSize:14,fontWeight:500,color:C.muted}}>({users.length})</span></h1>
+    <div style={{display:"flex",gap:10,marginBottom:18,flexWrap:"wrap"}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search users…" style={{flex:1,minWidth:200,padding:"9px 13px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",color:C.text}}/>
+      <div style={{display:"flex",gap:3,background:C.n50,borderRadius:9,padding:3}}>
+        {[{v:"all",l:"All"},{v:"mentor",l:"Mentors"},{v:"mentee",l:"Mentees"},{v:"org_admin",l:"Org Admins"}].map(f=><button key={f.v} onClick={()=>setFilter(f.v)} style={{padding:"7px 13px",borderRadius:7,border:"none",fontSize:12.5,fontWeight:600,background:filter===f.v?C.p600:"transparent",color:filter===f.v?"#fff":C.muted,cursor:"pointer"}}>{f.l}</button>)}
+      </div>
+    </div>
+    <div style={{background:"#fff",borderRadius:14,border:`1px solid ${C.border}`,overflow:"hidden",boxShadow:C.shadow}}>
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 100px",padding:"10px 18px",background:C.n50,borderBottom:`1px solid ${C.border}`}}>
+        {["Name","Role","Gender","Country","Admin"].map(h=><div key={h} style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".05em"}}>{h}</div>)}
+      </div>
+      {filtered.map((u,i)=>{
+        const st=activityStatus(u.last_seen);
+        return <div key={u.id} style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 100px",padding:"11px 18px",borderBottom:i<filtered.length-1?`1px solid ${C.n50}`:"none",alignItems:"center",background:u.is_admin||u.is_super_admin?"#f8fffe":"transparent"}}>
+          <div style={{display:"flex",alignItems:"center",gap:9,minWidth:0}}>
+            <div style={{position:"relative",flexShrink:0}}><Avatar name={u.full_name||"?"} size={30} url={u.avatar_url}/><div style={{position:"absolute",bottom:0,right:0,width:8,height:8,borderRadius:"50%",background:activityColor(st),border:"1.5px solid #fff"}}/></div>
+            <div style={{minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.full_name||"—"}</div><div style={{fontSize:11,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.email}</div></div>
+          </div>
+          <Badge label={u.role||"—"}/>
+          <span style={{fontSize:12.5,color:C.muted}}>{u.gender||"—"}</span>
+          <span style={{fontSize:12.5,color:C.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{u.country||"—"}</span>
+          {u.is_super_admin?<Badge label="Super" bg={C.p50} color={C.p600}/>:
+          <button onClick={()=>onToggleAdmin(u)} style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:7,border:`1.5px solid ${u.is_admin?C.dangerB:C.border}`,background:"transparent",color:u.is_admin?C.danger:C.muted,cursor:"pointer"}}>{u.is_admin?"Remove":"+ Admin"}</button>}
+        </div>;
+      })}
+      {filtered.length===0&&<Empty title="No users found"/>}
+    </div>
+  </div>;
+};
+
+/* ─────────────────────────────────────────────
+   AI ASSISTANT
+───────────────────────────────────────────── */
+const AIAssistant=({profile})=>{
+  const [open,setOpen]=useState(false);
+  const [msgs,setMsgs]=useState([{role:"assistant",content:`Hey ${profile?.full_name?.split(" ")[0]||"there"}! 👋 I'm your Mentor Me assistant. Ask me anything — mentorship, goals, the platform, or career advice.`}]);
+  const [input,setInput]=useState("");
+  const [thinking,setThinking]=useState(false);
+  const bottomRef=useRef();
+  useEffect(()=>{bottomRef.current?.scrollIntoView({behavior:"smooth"})},[msgs,open]);
+
+  const send=async()=>{
+    if(!input.trim()||thinking)return;
+    const text=input.trim();setInput("");
+    setMsgs(m=>[...m,{role:"user",content:text}]);setThinking(true);
+    try{
+      const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_KEY}`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          systemInstruction:{parts:[{text:`You are a helpful assistant for Mentor Me, a mentorship platform used across Africa. User: ${profile?.full_name}, Role: ${profile?.role}. Be concise, warm, and practical. Only help with mentorship, career, goals, and platform-related questions.`}]},
+          contents:[...msgs.map(m=>({role:m.role==="assistant"?"model":"user",parts:[{text:m.content}]})),{role:"user",parts:[{text}]}]
+        })
+      });
+      const d=await res.json();
+      const reply=d.candidates?.[0]?.content?.parts?.[0]?.text||"Sorry, I couldn't respond. Try again.";
+      setMsgs(m=>[...m,{role:"assistant",content:reply}]);
+    }catch{setMsgs(m=>[...m,{role:"assistant",content:"Connection issue. Please try again."}])}
+    setThinking(false);
+  };
+
+  return <>
+    <button onClick={()=>setOpen(!open)} style={{position:"fixed",bottom:22,right:22,width:50,height:50,borderRadius:"50%",background:C.p600,border:"none",cursor:"pointer",boxShadow:"0 4px 20px rgba(0,0,0,.2)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:400,fontSize:open?18:22,transition:"all .2s"}}>{open?"✕":"✨"}</button>
+    {open&&<div style={{position:"fixed",bottom:82,right:22,width:340,height:460,background:"#fff",borderRadius:18,boxShadow:C.shadowL,zIndex:400,display:"flex",flexDirection:"column",overflow:"hidden",animation:"fadeUp .2s ease",border:`1px solid ${C.border}`}}>
+      <div style={{padding:"14px 18px",background:C.p700,color:"#fff",display:"flex",alignItems:"center",gap:10}}>
+        <div style={{width:30,height:30,borderRadius:"50%",background:"rgba(255,255,255,.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14}}>✨</div>
+        <div><div style={{fontSize:13.5,fontWeight:700}}>AI Assistant</div><div style={{fontSize:11,opacity:.7}}>Powered by Gemini</div></div>
+      </div>
+      <div style={{flex:1,overflowY:"auto",padding:"16px",display:"flex",flexDirection:"column",gap:12}}>
+        {msgs.map((m,i)=><div key={i} style={{display:"flex",gap:8,flexDirection:m.role==="user"?"row-reverse":"row",alignItems:"flex-start"}}>
+          {m.role==="assistant"&&<div style={{width:24,height:24,borderRadius:"50%",background:C.p50,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,flexShrink:0}}>✨</div>}
+          <div style={{maxWidth:"78%",padding:"9px 12px",borderRadius:m.role==="user"?"12px 12px 3px 12px":"12px 12px 12px 3px",background:m.role==="user"?C.p600:C.n50,color:m.role==="user"?"#fff":C.text,fontSize:13,lineHeight:1.55}}>{m.content}</div>
+        </div>)}
+        {thinking&&<div style={{display:"flex",gap:8,alignItems:"center"}}><div style={{width:24,height:24,borderRadius:"50%",background:C.p50,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>✨</div><div style={{fontSize:13,color:C.muted,animation:"pulse 1.2s ease infinite"}}>Thinking…</div></div>}
+        <div ref={bottomRef}/>
+      </div>
+      <div style={{padding:"10px 14px",borderTop:`1px solid ${C.border}`,display:"flex",gap:8}}>
+        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&send()} placeholder="Ask anything…" style={{flex:1,padding:"9px 12px",borderRadius:9,border:`1.5px solid ${C.border}`,fontSize:13,outline:"none",color:C.text}}/>
+        <button onClick={send} disabled={thinking} style={{width:34,height:34,borderRadius:"50%",border:"none",background:input.trim()?C.p600:C.border,color:"#fff",cursor:input.trim()?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"background .15s",fontSize:14}}>→</button>
+      </div>
+    </div>}
+  </>;
+};
+
+/* ─────────────────────────────────────────────
+   AUTH SCREENS
+───────────────────────────────────────────── */
+const AuthLayout=({children,subtitle})=>(
+  <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,padding:24,overflowY:"auto"}}>
+    <div style={{width:"100%",maxWidth:460,padding:"24px 0"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:28}}>
+        <div style={{width:36,height:36,borderRadius:9,background:C.p600,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>🌱</div>
+        <div><div style={{fontSize:18,fontWeight:800,color:C.text,letterSpacing:"-.02em"}}>Mentor Me</div>{subtitle&&<div style={{fontSize:10,fontWeight:700,color:C.muted,letterSpacing:".06em",textTransform:"uppercase"}}>{subtitle}</div>}</div>
+      </div>
+      <div style={{background:"#fff",borderRadius:18,padding:"32px",border:`1px solid ${C.border}`,boxShadow:C.shadowM}}>{children}</div>
+    </div>
+  </div>
+);
+
+/* /mentor login */
+const MentorLogin=({onLogin,onSignup,onOrgPortal})=>{
+  const [email,setEmail]=useState("");
+  const [pass,setPass]=useState("");
+  const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(false);
+
+  const login=async()=>{
+    if(!email||!pass){setErr("Please fill in all fields.");return}
+    setLoading(true);setErr("");
+    const{data,error}=await db.auth.signInWithPassword({email:email.trim(),password:pass});
+    if(error){setLoading(false);setErr(error.message);return}
+    const{data:prof}=await db.from("profiles").select("*").eq("id",data.user.id).single();
+    if(!prof){await db.auth.signOut();setLoading(false);setErr("Account not found. Please sign up.");return}
+    await updateLastSeen(prof.id);
+    setLoading(false);onLogin(prof);
+  };
+  return <AuthLayout>
+    <h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em",marginBottom:6}}>Welcome back</h1>
+    <p style={{fontSize:13.5,color:C.muted,marginBottom:26}}>Sign in to your mentor or mentee account.</p>
+    <Field label="Email" type="email" placeholder="you@example.com" value={email} onChange={e=>{setEmail(e.target.value);setErr("")}}/>
+    <Field label="Password" type="password" placeholder="••••••••" value={pass} onChange={e=>{setPass(e.target.value);setErr("")}} error={err}/>
+    <Btn onClick={login} loading={loading} style={{width:"100%",marginTop:4,padding:"12px"}}>Sign In</Btn>
+    <p style={{textAlign:"center",fontSize:13,color:C.muted,marginTop:20}}>No account? <span onClick={onSignup} style={{color:C.p600,fontWeight:700,cursor:"pointer"}}>Create one</span></p>
+    <p style={{textAlign:"center",fontSize:12,color:C.light,marginTop:10}}>Organisation admin? <span onClick={onOrgPortal} style={{color:C.muted,fontWeight:600,cursor:"pointer"}}>Go to Org Portal →</span></p>
+  </AuthLayout>;
+};
+
+/* /org login */
+const OrgLogin=({onLogin,onSignup,onMentorPortal})=>{
+  const [email,setEmail]=useState("");
+  const [pass,setPass]=useState("");
+  const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(false);
+  const login=async()=>{
+    if(!email||!pass){setErr("Fill all fields.");return}
+    setLoading(true);setErr("");
+    const{data,error}=await db.auth.signInWithPassword({email:email.trim(),password:pass});
+    if(error){setLoading(false);setErr(error.message);return}
+    const{data:prof}=await db.from("profiles").select("*").eq("id",data.user.id).single();
+    if(!prof||prof.role!=="org_admin"){await db.auth.signOut();setLoading(false);setErr("This portal is for organisation admins only.");return}
+    await updateLastSeen(prof.id);
+    setLoading(false);onLogin(prof);
+  };
+  return <AuthLayout subtitle="Organisation Portal">
+    <h1 style={{fontSize:22,fontWeight:800,color:C.text,letterSpacing:"-.03em",marginBottom:6}}>Organisation Sign In</h1>
+    <p style={{fontSize:13.5,color:C.muted,marginBottom:26}}>Access your organisation dashboard.</p>
+    <Field label="Admin Email" type="email" value={email} onChange={e=>{setEmail(e.target.value);setErr("")}}/>
+    <Field label="Password" type="password" value={pass} onChange={e=>{setPass(e.target.value);setErr("")}} error={err}/>
+    <Btn onClick={login} loading={loading} style={{width:"100%",marginTop:4,padding:"12px"}}>Sign In</Btn>
+    <p style={{textAlign:"center",fontSize:13,color:C.muted,marginTop:20}}>New organisation? <span onClick={onSignup} style={{color:C.p600,fontWeight:700,cursor:"pointer"}}>Register here</span></p>
+    <p style={{textAlign:"center",fontSize:12,color:C.light,marginTop:10}}>Mentor or mentee? <span onClick={onMentorPortal} style={{color:C.muted,fontWeight:600,cursor:"pointer"}}>← Mentor/Mentee portal</span></p>
+  </AuthLayout>;
+};
+
+/* Member Signup */
+const MemberSignup=({onDone,onLogin})=>{
+  const [step,setStep]=useState(1);
+  const [role,setRole]=useState("mentee");
+  const [code,setCode]=useState("");
+  const [orgData,setOrgData]=useState(null);
+  const [form,setForm]=useState({full_name:"",email:"",password:"",title:"",bio:"",gender:"Prefer not to say",country:"Ghana",city:""});
+  const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(false);
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const verifyCode=async()=>{
+    if(!code.trim()){setErr("Enter an org code.");return}
+    setLoading(true);setErr("");
+    const{data,error}=await db.from("organisations").select("*").eq("code",code.trim().toUpperCase()).eq("status","active").single();
+    setLoading(false);
+    if(error||!data){setErr("Code not found or organisation not yet active. Contact your admin.");return}
+    setOrgData(data);setStep(2);
+  };
+  const signup=async()=>{
+    if(!form.full_name||!form.email||!form.password){setErr("Fill in all required fields.");return}
+    if(form.password.length<6){setErr("Password must be at least 6 characters.");return}
+    setLoading(true);setErr("");
+    const{data,error}=await db.auth.signUp({email:form.email.trim(),password:form.password,options:{data:{full_name:form.full_name,role}}});
+    if(error){setLoading(false);setErr(error.message);return}
+    if(data.user){
+      const{error:pe}=await db.from("profiles").upsert({
+        id:data.user.id,full_name:form.full_name,email:form.email.trim(),
+        role,title:form.title,bio:form.bio,
+        gender:form.gender,country:form.country,city:form.city,
+        org_id:orgData.id,last_seen:new Date().toISOString()
+      });
+      if(pe)console.error("Profile upsert error:",pe.message);
+    }
+    setLoading(false);setStep(3);
+  };
+
+  const StepDots=()=><div style={{display:"flex",gap:6,alignItems:"center",marginBottom:22}}>
+    {[1,2,3].map(s=><div key={s} style={{width:s===step?24:8,height:8,borderRadius:99,background:s<=step?C.p600:C.border,transition:"all .3s"}}/>)}
+    <span style={{fontSize:12,color:C.muted,marginLeft:4}}>Step {step} of 3</span>
+  </div>;
+
+  return <AuthLayout>
+    <StepDots/>
+    {step===1&&<>
+      <h1 style={{fontSize:20,fontWeight:800,color:C.text,letterSpacing:"-.03em",marginBottom:6}}>Join an Organisation</h1>
+      <p style={{fontSize:13,color:C.muted,marginBottom:20}}>Enter the code your organisation shared with you.</p>
+      <div style={{display:"flex",gap:4,padding:4,background:C.n50,borderRadius:9,marginBottom:18,width:"fit-content"}}>
+        {[{v:"mentee",l:"I'm a Mentee"},{v:"mentor",l:"I'm a Mentor"}].map(r=><button key={r.v} onClick={()=>setRole(r.v)} style={{padding:"8px 18px",borderRadius:7,border:"none",fontSize:13,fontWeight:600,background:role===r.v?C.p600:"transparent",color:role===r.v?"#fff":C.muted,cursor:"pointer"}}>{r.l}</button>)}
+      </div>
+      <div style={{marginBottom:18}}>
+        <label style={{display:"block",fontSize:12.5,fontWeight:600,color:C.muted,marginBottom:6}}>Organisation Code</label>
+        <input placeholder="e.g. MENT42" value={code} onChange={e=>{setCode(e.target.value.toUpperCase());setErr("")}} style={{width:"100%",padding:"14px",borderRadius:10,border:`1.5px solid ${err?C.danger:C.border}`,fontFamily:"monospace",fontSize:22,fontWeight:800,letterSpacing:".18em",color:C.p600,textAlign:"center",outline:"none",display:"block"}}/>
+        {err&&<div style={{fontSize:12,color:C.danger,marginTop:5}}>{err}</div>}
+      </div>
+      <Btn onClick={verifyCode} loading={loading} style={{width:"100%",padding:"12px"}}>Continue →</Btn>
+      <p style={{textAlign:"center",fontSize:13,color:C.muted,marginTop:18}}>Already have an account? <span onClick={onLogin} style={{color:C.p600,fontWeight:700,cursor:"pointer"}}>Sign in</span></p>
+    </>}
+    {step===2&&<>
+      <h1 style={{fontSize:20,fontWeight:800,color:C.text,letterSpacing:"-.03em",marginBottom:4}}>Create Your Account</h1>
+      <p style={{fontSize:13,color:C.muted,marginBottom:20}}>Joining <strong>{orgData?.name}</strong> as a <strong>{role}</strong></p>
+      <Field label="Full name" placeholder="Your full name" value={form.full_name} onChange={e=>set("full_name",e.target.value)} required/>
+      <Field label="Email" type="email" placeholder="you@example.com" value={form.email} onChange={e=>{set("email",e.target.value);setErr("")}} required/>
+      <Field label="Password" type="password" placeholder="At least 6 characters" value={form.password} onChange={e=>{set("password",e.target.value);setErr("")}} error={err} required/>
+      <Field label={role==="mentor"?"Your expertise / title":"Your field / role"} placeholder={role==="mentor"?"e.g. Brand Strategy Mentor":"e.g. Digital Marketing Specialist"} value={form.title} onChange={e=>set("title",e.target.value)}/>
+      <Select label="Gender" value={form.gender} onChange={e=>set("gender",e.target.value)} options={["Male","Female","Prefer not to say"]}/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <Field label="Country" placeholder="e.g. Ghana" value={form.country} onChange={e=>set("country",e.target.value)}/>
+        <Field label="City" placeholder="e.g. Accra" value={form.city} onChange={e=>set("city",e.target.value)}/>
+      </div>
+      <Field label="Short bio (optional)" placeholder="Tell people about yourself…" value={form.bio} onChange={e=>set("bio",e.target.value)} rows={2}/>
+      <div style={{display:"flex",gap:10,marginTop:4}}>
+        <Btn variant="outline" onClick={()=>{setStep(1);setErr("")}}>← Back</Btn>
+        <Btn onClick={signup} loading={loading} style={{flex:1,padding:"12px"}}>Create Account</Btn>
+      </div>
+    </>}
+    {step===3&&<div style={{textAlign:"center",padding:"8px 0 16px"}}>
+      <div style={{width:60,height:60,borderRadius:14,background:C.p50,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 18px",fontSize:28}}>🎉</div>
+      <h2 style={{fontSize:20,fontWeight:800,color:C.text,marginBottom:8}}>You're in!</h2>
+      <p style={{fontSize:13.5,color:C.muted,lineHeight:1.6,marginBottom:24}}>Welcome to <strong>{orgData?.name}</strong>. Sign in to get started.</p>
+      <Btn onClick={onLogin} style={{width:"100%",padding:"12px"}}>Sign In Now →</Btn>
+    </div>}
+  </AuthLayout>;
+};
+
+/* Org Signup */
+const OrgSignup=({onDone,onLogin,onMentorPortal})=>{
+  const [step,setStep]=useState(1);
+  const [form,setForm]=useState({orgName:"",industry:"",country:"Ghana",about:"",email:"",password:"",full_name:""});
+  const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [code,setCode]=useState("");
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const submit=async()=>{
+    if(!form.orgName||!form.email||!form.password||!form.full_name){setErr("Fill in all required fields.");return}
+    if(form.password.length<6){setErr("Password must be at least 6 characters.");return}
+    setLoading(true);setErr("");
+    const base=form.orgName.replace(/[^a-zA-Z]/g,"").toUpperCase().slice(0,4).padEnd(4,"X");
+    const genCode=base+Math.floor(10+Math.random()*90);
+    const{data:org,error:orgErr}=await db.from("organisations").insert({name:form.orgName,industry:form.industry,country:form.country,about:form.about,email:form.email.trim(),code:genCode,status:"pending"}).select().single();
+    if(orgErr){setLoading(false);setErr(orgErr.message);return}
+    const{data:authData,error:authErr}=await db.auth.signUp({email:form.email.trim(),password:form.password,options:{data:{full_name:form.full_name,role:"org_admin"}}});
+    if(authErr){setLoading(false);setErr(authErr.message);return}
+    if(authData.user){
+      await db.from("profiles").upsert({id:authData.user.id,full_name:form.full_name,email:form.email.trim(),role:"org_admin",org_id:org.id,last_seen:new Date().toISOString()});
+      await db.from("organisations").update({owner_id:authData.user.id}).eq("id",org.id);
+    }
+    setLoading(false);setCode(genCode);setStep(2);
+  };
+
+  return <AuthLayout subtitle="Organisation Portal">
+    {step===1?<>
+      <div style={{display:"flex",gap:5,marginBottom:22}}>
+        <div style={{width:22,height:8,borderRadius:99,background:C.p600}}/><div style={{width:8,height:8,borderRadius:99,background:C.border}}/>
+        <span style={{fontSize:12,color:C.muted,marginLeft:4}}>Step 1 of 2</span>
+      </div>
+      <h1 style={{fontSize:20,fontWeight:800,color:C.text,letterSpacing:"-.03em",marginBottom:6}}>Register Your Organisation</h1>
+      <p style={{fontSize:13,color:C.muted,marginBottom:22}}>Your application will be reviewed before activation.</p>
+      <Field label="Organisation name" placeholder="e.g. Ravvis Media" value={form.orgName} onChange={e=>set("orgName",e.target.value)} required/>
+      <Field label="Industry / Type" placeholder="e.g. Digital Marketing, NGO, Education…" value={form.industry} onChange={e=>set("industry",e.target.value)}/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <Field label="Country" value={form.country} onChange={e=>set("country",e.target.value)}/>
+      </div>
+      <Field label="About" placeholder="Brief description of your organisation…" value={form.about} onChange={e=>set("about",e.target.value)} rows={2}/>
+      <div style={{borderTop:`1px solid ${C.border}`,margin:"16px 0",paddingTop:16}}>
+        <div style={{fontSize:13,fontWeight:700,color:C.text,marginBottom:12}}>Your admin account</div>
+        <Field label="Your full name" value={form.full_name} onChange={e=>set("full_name",e.target.value)} required/>
+        <Field label="Email" type="email" value={form.email} onChange={e=>{set("email",e.target.value);setErr("")}} required/>
+        <Field label="Password" type="password" placeholder="At least 6 characters" value={form.password} onChange={e=>{set("password",e.target.value);setErr("")}} error={err} required/>
+      </div>
+      <Btn onClick={submit} loading={loading} style={{width:"100%",padding:"12px"}}>Submit Application →</Btn>
+      <p style={{textAlign:"center",fontSize:13,color:C.muted,marginTop:18}}>Already have an account? <span onClick={onLogin} style={{color:C.p600,fontWeight:700,cursor:"pointer"}}>Sign in</span></p>
+    </>:<div style={{textAlign:"center",padding:"8px 0 16px"}}>
+      <div style={{width:60,height:60,borderRadius:14,background:C.p50,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 18px",fontSize:28}}>🎉</div>
+      <h2 style={{fontSize:20,fontWeight:800,color:C.text,marginBottom:8}}>Application Submitted!</h2>
+      <p style={{fontSize:13,color:C.muted,lineHeight:1.6,marginBottom:18}}><strong>{form.orgName}</strong> is pending review. You'll be notified once approved.</p>
+      <div style={{background:C.p50,borderRadius:13,padding:"18px",marginBottom:22,border:`1.5px dashed ${C.p200}`}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:".08em",marginBottom:6}}>Your Organisation Code</div>
+        <div style={{fontSize:34,fontWeight:800,letterSpacing:".18em",fontFamily:"monospace",color:C.p600}}>{code}</div>
+        <div style={{fontSize:12,color:C.muted,marginTop:6}}>Save this. Share with members once approved.</div>
+      </div>
+      <Btn onClick={onLogin} style={{width:"100%",padding:"12px"}}>Go to Sign In</Btn>
+    </div>}
+  </AuthLayout>;
+};
+
+/* ─────────────────────────────────────────────
+   ROOT APP
+───────────────────────────────────────────── */
+function App(){
+  const path=window.location.pathname.replace(/\/+$/,"").toLowerCase()||"/mentor";
+  const [screen,setScreen]=useState("loading");
+  const [profile,setProfile]=useState(null);
+  const [org,setOrg]=useState(null);
+  const [tab,setTab]=useState("dashboard");
+  const [collapsed,setCollapsed]=useState(false);
+  const [notifications,setNotifications]=useState([]);
+
+  // Route + session restore
+  useEffect(()=>{
+    if(path==="/admin"){setScreen("admin");return}
+    const route=path==="/org"?"org":"mentor";
+    db.auth.getSession().then(({data:{session}})=>{
+      if(session&&sessionStorage.getItem("mm_admin")!=="1")restore(session.user,route);
+      else setScreen(route==="org"?"org_login":"mentor_login");
+    });
+    const{data:{subscription}}=db.auth.onAuthStateChange((_,session)=>{
+      if(!session&&sessionStorage.getItem("mm_admin")!=="1"){
+        setScreen(path==="/org"?"org_login":"mentor_login");setProfile(null);setOrg(null);
+      }
+    });
+    return()=>subscription.unsubscribe();
+  },[]);
+
+  const restore=async(authUser,portalHint)=>{
+    const{data:prof}=await db.from("profiles").select("*").eq("id",authUser.id).single();
+    if(!prof){setScreen(portalHint==="org"?"org_login":"mentor_login");return}
+    await updateLastSeen(prof.id);
+    if(prof.org_id){const{data:o}=await db.from("organisations").select("*").eq("id",prof.org_id).single();setOrg(o);}
+    await loadNotifs(prof.id);
+    setProfile(prof);setScreen("app");
+  };
+  const loadNotifs=async uid=>{
+    const{data}=await db.from("notifications").select("*").eq("user_id",uid).order("created_at",{ascending:false}).limit(20);
+    setNotifications(data||[]);
+  };
+  const markNotifRead=async()=>{
+    if(!profile?.id)return;
+    await db.from("notifications").update({read:true}).eq("user_id",profile.id).eq("read",false);
+    setNotifications(n=>n.map(x=>({...x,read:true})));
+  };
+  const signOut=async()=>{
+    sessionStorage.removeItem("mm_admin");await db.auth.signOut();
+    setProfile(null);setOrg(null);setTab("dashboard");
+    window.location.href=path==="/org"?"/org":"/mentor";
+  };
+  const onLogin=async prof=>{
+    await updateLastSeen(prof.id);
+    if(prof.org_id){const{data:o}=await db.from("organisations").select("*").eq("id",prof.org_id).single();setOrg(o);}
+    await loadNotifs(prof.id);
+    setProfile(prof);setScreen("app");
+  };
+
+  // Admin
+  if(path==="/admin"||screen==="admin")return <AdminPortal onBack={async()=>{sessionStorage.removeItem("mm_admin");await db.auth.signOut();window.location.href="/mentor"}}/>;
+
+  if(screen==="loading")return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:C.bg,flexDirection:"column",gap:14}}>
+    <div style={{width:44,height:44,borderRadius:11,background:C.p600,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>🌱</div>
+    <Spinner s={28}/>
+  </div>;
+
+  // Auth screens
+  if(screen==="org_signup")return <OrgSignup onDone={()=>setScreen("org_login")} onLogin={()=>setScreen("org_login")} onMentorPortal={()=>window.location.href="/mentor"}/>;
+  if(screen==="org_login")return <OrgLogin onLogin={onLogin} onSignup={()=>setScreen("org_signup")} onMentorPortal={()=>window.location.href="/mentor"}/>;
+  if(screen==="member_signup")return <MemberSignup onDone={()=>setScreen("mentor_login")} onLogin={()=>setScreen("mentor_login")}/>;
+  if(screen==="mentor_login")return <MentorLogin onLogin={onLogin} onSignup={()=>setScreen("member_signup")} onOrgPortal={()=>window.location.href="/org"}/>;
+
+  if(screen==="app"&&!profile)return null;
+
+  // Org admin portal
+  if(screen==="app"&&profile?.role==="org_admin")
+    return <OrgDashboard profile={profile} org={org} setOrg={setOrg} onSignOut={signOut}/>;
+
+  // Mentor / Mentee app
+  if(screen==="app"&&profile){
+    const SCREENS={
+      dashboard:<Dashboard profile={profile}/>,
+      sessions:<Sessions profile={profile}/>,
+      goals:<Goals profile={profile}/>,
+      quizzes:<Quizzes profile={profile}/>,
+      messages:<Messages profile={profile}/>,
+      resources:<Resources profile={profile}/>,
+      profile:<UserProfile profile={profile} onUpdate={p=>{setProfile(p)}}/>,
+    };
+    const unread=notifications.filter(n=>!n.read).length;
+    return <div style={{display:"flex",height:"100vh",background:C.bg,overflow:"hidden"}}>
+      <Sidebar active={tab} onNav={setTab} profile={profile} onSignOut={signOut} unread={unread} collapsed={collapsed} setCollapsed={setCollapsed}/>
+      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <TopBar title={NAV_ITEMS.find(n=>n.id===tab)?.label||"Dashboard"} profile={profile} notifications={notifications} onMarkRead={markNotifRead}/>
+        <div style={{flex:1,overflow:tab==="messages"?"hidden":"auto",display:tab==="messages"?"flex":"block"}}>
+          {SCREENS[tab]}
+        </div>
+      </div>
+      <AIAssistant profile={profile}/>
+    </div>;
+  }
+  return null;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
